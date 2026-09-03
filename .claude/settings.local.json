@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//mnt/c/Users/koppa/AppData/Local/**)",
-      "Bash(ls \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\koppa\\\\final year project\")"
-    ]
-  }
-}
