@@ -18,6 +18,15 @@ services:
       - IDP_HOST=0.0.0.0
       - IDP_PORT=9000
       - IDP_GATEWAY_LINK_PORT=9443
+    # Run as the host user that owns the bind mounts below. The image's own
+    # `idp` user is uid 10001, which cannot write to a host directory owned
+    # by someone else — SQLite fails with "attempt to write a readonly
+    # database" and the IDP crash-loops. The whole point of these mounts is
+    # that a container run and a native run share one identity, so the
+    # container has to write as the mount's owner.
+    # Override on a host where you are not uid 1000:
+    #   HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     ports:
       - "9000:9000"
       # Gateway-only mTLS link: Gateways register their ML-KEM public key and
