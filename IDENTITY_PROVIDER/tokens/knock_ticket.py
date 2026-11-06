@@ -8,6 +8,11 @@ The ticket is signed with its own ES256 (P-256) key, separate from the RS256
 JWT key: an RSA-3072 signature alone is 384 bytes, more than the whole room
 left in the knock. The public half is published in the JWKS next to the RSA
 key, so the Gateway fetches both from one place.
+
+The posture byte passed to issue() is covered by that signature, which is the
+whole reason posture travels in the ticket rather than in the knock payload.
+This module only signs what it is handed; deciding what the six bits say is
+policy/posture.py's job.
 """
 
 from __future__ import annotations
@@ -58,15 +63,21 @@ def init() -> None:
            private_key_path=settings.idp_ticket_private_key_path)
 
 
-def issue(sid: str, wg_public_key: bytes) -> tuple[bytes, dict]:
+def issue(sid: str, wg_public_key: bytes, posture: int = 0) -> tuple[bytes, dict]:
+    """Sign one knock ticket. `posture` is the packed six-signal byte from
+    policy/posture.py; it defaults to 0 (every signal false, i.e. untrusted)
+    so a caller that has no posture to offer cannot accidentally claim any.
+    """
     ticket_id = str(uuid.uuid4())
     expires_at = int(time.time()) + settings.idp_knock_ticket_ttl_seconds
-    body = ticket_format.pack_body(sid, ticket_id, expires_at, wg_public_key)
+    body = ticket_format.pack_body(sid, ticket_id, expires_at, wg_public_key, posture)
     r, s = decode_dss_signature(_private_key.sign(body, ec.ECDSA(hashes.SHA256())))
     ticket = body + r.to_bytes(32, "big") + s.to_bytes(32, "big")
     status(log, "Knock ticket signed", sid=sid, ticket_id=ticket_id,
-           bytes=len(ticket), ttl_s=settings.idp_knock_ticket_ttl_seconds)
-    return ticket, {"sid": sid, "ticket_id": ticket_id, "expires_at": expires_at}
+           posture=f"0x{posture:02x}", bytes=len(ticket),
+           ttl_s=settings.idp_knock_ticket_ttl_seconds)
+    return ticket, {"sid": sid, "ticket_id": ticket_id, "expires_at": expires_at,
+                    "posture": posture}
 
 
 def public_key() -> ec.EllipticCurvePublicKey:

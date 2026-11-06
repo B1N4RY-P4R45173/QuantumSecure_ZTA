@@ -1,6 +1,6 @@
 """Builds the ML-KEM-protected SPA packet the client sends to the Gateway.
 
-The packet carries the IDP's knock ticket (133 bytes, single use, 60 s),
+The packet carries the IDP's knock ticket (134 bytes, single use, 60 s),
 never the access JWT: the JWT is a 15-minute bearer token and would push
 the knock past one UDP datagram.
 """

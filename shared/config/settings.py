@@ -97,6 +97,15 @@ class Settings:
     # pinned per device on first enrolment instead; see fido2_idp/tpm_trust.py.
     idp_tpm_root_ca_dir: str = os.environ.get("IDP_TPM_ROOT_CA_DIR", "./certs/tpm_roots")
 
+    # --- IDP: device-posture normalisation (policy/posture.py) ---
+    # How stale the client's last OS patch may be before the `os_patched` bit
+    # packs as false in the signed knock ticket. A policy number, not a magic
+    # literal: 30 days is one patch cycle, so a machine that took the last
+    # monthly update still passes and one that skipped a cycle does not. Raise
+    # it for a fleet on a slower maintenance window; lower it to tighten.
+    idp_posture_max_patch_age_days: int = int(
+        os.environ.get("IDP_POSTURE_MAX_PATCH_AGE_DAYS", "30"))
+
     # --- Gateway ---
     gateway_host: str = os.environ.get("GATEWAY_HOST", "0.0.0.0")
     gateway_spa_port: int = int(os.environ.get("GATEWAY_SPA_PORT", "62201"))

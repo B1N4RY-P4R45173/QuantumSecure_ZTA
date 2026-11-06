@@ -89,10 +89,15 @@ def gateway(kem_keys, ticket_key, monkeypatch):
     return build
 
 
-def make_ticket(key, *, ticket_id: str | None = None, expires_at: int | None = None) -> bytes:
+NO_POSTURE = {name: False for name in ticket_format.POSTURE_BITS}
+
+
+def make_ticket(key, *, ticket_id: str | None = None, expires_at: int | None = None,
+                posture: int = 0) -> bytes:
     """What IDENTITY_PROVIDER/tokens/knock_ticket.issue() produces."""
     body = ticket_format.pack_body(SID, ticket_id or str(uuid.uuid4()),
-                                   expires_at or int(time.time()) + 60, WG_KEY)
+                                   expires_at or int(time.time()) + 60, WG_KEY,
+                                   posture=posture)
     r, s = decode_dss_signature(key.sign(body, ec.ECDSA(hashes.SHA256())))
     return body + r.to_bytes(32, "big") + s.to_bytes(32, "big")
 
@@ -115,10 +120,46 @@ def test_verified_knock_is_forwarded_and_opens_the_port(gateway, kem_keys, ticke
     assert msg["client_ip"] == CLIENT[0]
     assert msg["access_port"] == 443
     assert msg["identity"] == {"sid": SID, "ticket_id": ticket_id,
-                               "wg_public_key": base64.b64encode(WG_KEY).decode()}
+                               "wg_public_key": base64.b64encode(WG_KEY).decode(),
+                               "posture": NO_POSTURE}
     assert "ticket" not in msg                    # raw ticket stays at the Gateway
     assert gw.grants == [(CLIENT[0], 443, "tcp", 30)]
     assert gw.replies == [(CLIENT, b"SPA_OK")]
+
+
+def test_attested_posture_is_forwarded_exactly_as_the_idp_signed_it(gateway, kem_keys, ticket_key):
+    """The posture byte is the Controller's only source of device signals, so
+    the bits that reach it must be the ones the IDP signed - no more, no fewer."""
+    signed = {"device_managed": True, "known_device": True, "os_patched": True}
+    gw = gateway()
+    gw.listener._handle_packet(
+        make_knock(kem_keys, make_ticket(ticket_key,
+                                         posture=ticket_format.pack_posture(signed))), CLIENT)
+
+    [msg] = gw.controller.messages
+    assert msg["identity"]["posture"] == {**NO_POSTURE, **signed}
+
+
+def test_posture_bits_cannot_be_asserted_in_the_knock_payload(gateway, kem_keys, ticket_key):
+    """A client that puts posture in the payload gains nothing: the Gateway
+    reads the signed byte and never the plaintext the sender chose."""
+    gw = gateway()
+    gw.listener._handle_packet(
+        make_knock(kem_keys, make_ticket(ticket_key),
+                   posture={name: True for name in ticket_format.POSTURE_BITS}), CLIENT)
+
+    [msg] = gw.controller.messages
+    assert msg["identity"]["posture"] == NO_POSTURE
+
+
+def test_tampering_with_the_posture_byte_invalidates_the_ticket(gateway, kem_keys, ticket_key):
+    """The signature covers byte 69, so flipping a posture bit in flight must
+    fail verification rather than buy trust."""
+    ticket = bytearray(make_ticket(ticket_key))
+    ticket[69] ^= 0xFF
+    gw = gateway()
+    gw.listener._handle_packet(make_knock(kem_keys, bytes(ticket)), CLIENT)
+    assert gw.controller.messages == [] and gw.replies == []
 
 
 def test_full_acl_reaches_every_destination(gateway, kem_keys, ticket_key):

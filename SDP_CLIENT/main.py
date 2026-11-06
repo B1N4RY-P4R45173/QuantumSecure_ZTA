@@ -8,9 +8,14 @@ admin-only):
        The IDP returns a short-lived login_token and says whether this
        device is already enrolled.
     2. Select a hardware trust anchor: internal TPM -> external USB key ->
-       abort. No software-only identity fallback.
-    3. FIDO2/WebAuthn ceremony against the IDP, carrying the login_token:
-       register on first login for this device, otherwise authenticate.
+       abort. No software-only identity fallback. Then snapshot local device
+       posture (posture/), which names the anchor just chosen.
+    3. FIDO2/WebAuthn ceremony against the IDP, carrying the login_token and
+       the posture report: register on first login for this device,
+       otherwise authenticate. The client does not score its own posture —
+       it reports; the IDP decides which bits the report earns, signs them
+       into byte 69 of every knock ticket for the session, and the Gateway
+       reads them only after checking that signature.
     4. On success the IDP issues an access token (15 min), a refresh token,
        and the Gateway's ML-KEM public key. A background loop refreshes the
        access token before it expires.
@@ -50,6 +55,7 @@ from spa import token_flow
 from tpm.anchored_trust import TrustAnchorUnavailable, select_trust_anchor
 from wireguard import keys as wg_keys
 from shared.config.settings import settings
+from shared.schemas.posture import PostureReport
 from shared.utils.logger import get_logger, status
 
 log = get_logger("Client")
@@ -172,14 +178,29 @@ def main() -> int:
     status(log, f"[2/6] Trust anchor selected: {anchor.kind}",
            backend=anchor.backend, simulated=anchor.simulated)
 
-    # Posture telemetry is collected locally for visibility only; it is NOT
-    # sent to the IDP in this phase (telemetry design is deferred).
+    # Posture is collected HERE, after the anchor is selected and before the
+    # ceremony, and the ordering is load-bearing: the report's
+    # trust_anchor_type / trust_anchor_present fields describe the anchor
+    # actually chosen above, so collecting any earlier would ship a report
+    # naming an anchor this session never used. It also has to be collected
+    # before step 3, because the report travels up with the assertion.
+    #
+    # The report is evidence, not a verdict. The IDP turns it into the three
+    # client-reported posture bits (patched / encrypted / antivirus), adds
+    # the three it attests itself, and signs the result into the knock
+    # ticket. A failed snapshot is therefore never fatal: it leaves `posture`
+    # None, the field is simply absent from the request, and those bits pack
+    # as false — unknown is untrusted, the same rule the trust scorer uses.
+    posture: PostureReport | None = None
     try:
         posture = checker.collect(device_id, anchor.kind, trust_anchor_present=True)
-        status(log, "[2/6] Local posture snapshot (not transmitted)",
-               os=posture.os_name, anchor=posture.trust_anchor_type)
-    except Exception as exc:  # posture must never block auth in this phase
-        status(log, "[2/6] Local posture snapshot failed (ignored)", error=str(exc))
+        status(log, "[2/6] Device posture snapshot taken - sent to the IDP with the assertion",
+               os=posture.os_name, anchor=posture.trust_anchor_type,
+               os_patch_days=posture.os_patch_days, disk_encrypted=posture.disk_encrypted,
+               antivirus_active=posture.antivirus_active)
+    except Exception as exc:  # posture must never block authentication
+        status(log, "[2/6] Device posture snapshot failed (ignored - bits pack as false)",
+               error=str(exc))
 
     origin = f"https://{settings.rp_id}"
     # The cached credential is only usable by the trust anchor that enrolled
@@ -200,7 +221,8 @@ def main() -> int:
 
         _wg_private, wg_public = wg_keys.load_or_generate()
         token_bundle = fido2_client.authenticate(
-            login_token, credential_id, anchor, settings.rp_id, origin, wg_public)
+            login_token, credential_id, anchor, settings.rp_id, origin, wg_public,
+            posture=posture)
     except requests.HTTPError as exc:
         detail = exc.response.text[:300] if exc.response is not None else str(exc)
         status(log, "[FATAL] FIDO2 ceremony rejected by IDP", detail=detail)

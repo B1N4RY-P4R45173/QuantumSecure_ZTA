@@ -10,6 +10,14 @@ provisioned by an administrator at the IDP.
 Terminal output: each ceremony prints a title banner, then numbered
 "Step n/N: ..." lines mirroring the WebAuthn/CTAP2 protocol, then a summary
 block — so a demo viewer (and a failed run) can be followed step by step.
+
+The authentication ceremony also carries this device's PostureReport. It
+rides with the assertion rather than in the knock, because the knock payload
+is not signed by anyone: a client that reported posture at knock time could
+simply claim to be patched. Reported here, the IDP decides which posture
+bits the report earns, signs them into byte 69 of the knock ticket, and the
+Gateway reads them only after verifying that signature — so posture reaches
+the trust scorer attested rather than asserted.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ from fido2.webauthn import CredentialCreationOptions, CredentialRequestOptions
 from fido2_agent import external_authenticator, tpm_authenticator, windows_authenticator
 from tpm.anchored_trust import BACKEND_WINDOWS_WEBAUTHN, AnchoredIdentity
 from shared.config.settings import settings
+from shared.schemas.posture import PostureReport
 from shared.utils.logger import banner, field, get_logger, status, step
 
 log = get_logger("FIDO2Client")
@@ -158,12 +167,21 @@ def register(login_token: str, anchor: AnchoredIdentity, rp_id: str, origin: str
 # --------------------------------------------------------------------------- #
 
 def authenticate(login_token: str, credential_id: bytes, anchor: AnchoredIdentity,
-                 rp_id: str, origin: str, wg_public_key: bytes) -> dict:
+                 rp_id: str, origin: str, wg_public_key: bytes,
+                 posture: PostureReport | None = None) -> dict:
     """Run the WebAuthn authentication ceremony. Returns the IDP token bundle
     (`access_token`, `refresh_token`, `knock_ticket`, `gateways`, …).
 
     `wg_public_key` goes up with the assertion: the IDP binds it to the new
     session and puts it in every knock ticket it issues for that session.
+
+    `posture` is this device's snapshot (shared/schemas/posture.py), collected
+    after the trust anchor was chosen so its trust_anchor_* fields name the
+    anchor actually in use. It is sent as the `posture` member of the
+    authenticate/complete request, which the IDP reads to set the three
+    client-reported bits of the ticket's posture byte. None when the snapshot
+    failed: the member is then absent from the request (`_wire_safe` drops
+    None), and the IDP packs those bits as false — unknown is untrusted.
     """
     banner(log, "FIDO2 AUTHENTICATION INITIATED")
     field(log, "Relying Party (IDP)", rp_id)
@@ -194,9 +212,15 @@ def authenticate(login_token: str, credential_id: bytes, anchor: AnchoredIdentit
         client = external_authenticator.build_client(anchor.ctap_device, origin)
         response = external_authenticator.authenticate(client, options)
 
-    step(log, 5, 6, "Submitting the signed assertion to IDP", endpoint="/fido2/authenticate/complete")
+    step(log, 5, 6, "Submitting the signed assertion + device posture to IDP",
+         endpoint="/fido2/authenticate/complete",
+         posture="reported" if posture is not None else "unavailable (bits pack as false)")
     result = _post_cbor("/fido2/authenticate/complete", {
         "flow_id": resp["flow_id"], "response": response, "wg_public_key": wg_public_key,
+        # model_dump() rather than the model itself: the body is CBOR, and
+        # _wire_safe() needs plain dicts to walk. collected_at is a float, so
+        # it crosses as a string — pydantic coerces it back on the IDP side.
+        "posture": posture.model_dump() if posture is not None else None,
     }, login_token)
 
     if result.get("status") != "granted":
@@ -217,6 +241,12 @@ def authenticate(login_token: str, credential_id: bytes, anchor: AnchoredIdentit
                                f"valid {result.get('knock_ticket_expires_in')}s, single use"
           if result.get("knock_ticket") else "not provided")
     field(log, "Hardware-attested", result.get("hardware_attested"))
+    # What was reported, not what was credited: only the ticket's posture byte
+    # says which bits the IDP actually granted.
+    field(log, "Posture reported",
+          f"os_patch_days={posture.os_patch_days} disk_encrypted={posture.disk_encrypted} "
+          f"antivirus_active={posture.antivirus_active} anchor={posture.trust_anchor_type}"
+          if posture is not None else "none - IDP will treat client-reported bits as false")
     field(log, "Gateways listed", [g.get("gateway_id") for g in result.get("gateways") or []])
     return result
 

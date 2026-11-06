@@ -2,7 +2,7 @@
 knock.
 
 A client completes FIDO2 authentication with the IDP first, which hands it
-this Gateway's ML-KEM public key plus a knock ticket: 133 bytes, signed by
+this Gateway's ML-KEM public key plus a knock ticket: 134 bytes, signed by
 the IDP, valid 60 s, usable once (shared/utils/knock_ticket.py). The client
 then ML-KEM-encapsulates against that public key and sends the resulting
 encrypted knock here — this is the only packet the Gateway will accept
@@ -12,6 +12,14 @@ set up in firewall/rules.py.
 The knock carries the ticket, never the 15-minute access JWT. The JWT is a
 bearer credential for the whole access lifetime and too big for one UDP
 datagram; it belongs on the session's keepalives, not in the knock.
+
+The ticket also carries one byte of device posture, which this listener
+unpacks and forwards to the Controller as part of the identity. The Gateway
+collects no posture of its own and the knock payload carries none on
+purpose: a client that reported its own posture could simply claim to be
+patched. The IDP decides what the bits say and signs them, and
+ticket_format.verify() checks that signature before the bits are read, so
+what reaches the Controller is attested rather than asserted.
 
 Checks run cheapest first, following the PULGABLE_ZTNA_V2 Gateway:
 
@@ -125,11 +133,17 @@ class SPAListener:
                    ticket_id=ticket.ticket_id)
             return
 
-        # The Controller sees who the ticket was issued to, never the ticket itself.
+        # The Controller sees who the ticket was issued to and the posture the
+        # IDP attested for it, never the ticket itself. `ticket.signals` is the
+        # posture byte that the signature verified above already covered,
+        # unpacked under the trust scorer's own signal names so the Controller
+        # needs no translation table that could drift from the wire format.
         identity = {"sid": ticket.sid, "ticket_id": ticket.ticket_id,
-                    "wg_public_key": base64.b64encode(ticket.wg_public_key).decode("ascii")}
+                    "wg_public_key": base64.b64encode(ticket.wg_public_key).decode("ascii"),
+                    "posture": ticket.signals}
         status(log, "SPA knock verified - forwarding to Controller", client_ip=client_ip,
-               sid=ticket.sid, ticket_id=ticket.ticket_id, port=access_port)
+               sid=ticket.sid, ticket_id=ticket.ticket_id, port=access_port,
+               posture=",".join(name for name, held in identity["posture"].items() if held) or "none")
 
         try:
             decision = self._controller.send({

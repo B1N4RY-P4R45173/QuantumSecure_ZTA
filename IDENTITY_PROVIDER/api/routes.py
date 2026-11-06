@@ -33,6 +33,7 @@ from fido2_idp import server as fido2_server
 from fido2_idp.attestation_tpm import AttestationRejected
 from geo import resolver as geo
 from policy import baseline as policy
+from policy import posture as posture_policy
 from store import credentials as cred_store
 from store import events, tokens as token_store
 from store import gateways as gateway_store
@@ -328,6 +329,13 @@ async def fido2_authenticate_complete(request: Request, authorization: str | Non
         raise HTTPException(status_code=400,
                             detail=f"wg_public_key must be {ticket_format.WG_KEY_LEN} raw bytes")
 
+    # Optional `posture`: the client's PostureReport (shared/schemas/posture.py)
+    # as a CBOR map. Unlike wg_public_key this is NOT validated into a 400 —
+    # parse_report swallows a missing or malformed report and the three
+    # client-reported bits pack as false. Posture decides a trust score, so bad
+    # posture belongs in the score, not in a login failure.
+    report = posture_policy.parse_report(body.get("posture"))
+
     user = user_store.get_by_username(c["username"])
     if user is None or not user.enabled:
         raise HTTPException(status_code=403, detail="account is not active")
@@ -361,16 +369,25 @@ async def fido2_authenticate_complete(request: Request, authorization: str | Non
         revoked=False, issue_ip=src_ip, issue_geo=src_geo, last_ip=src_ip, last_geo=src_geo,
         last_used_at=refresh_claims["iat"], wg_public_key=wg_public_key,
     ))
-    knock_ticket, ticket_info = knock_ticket_service.issue(sid, wg_public_key)
+    # Posture: decided from the IDP's own records plus the client's report, and
+    # signed into the ticket. Remembered against the session so
+    # /token/knock-ticket can reissue without the client resending the report.
+    signals = posture_policy.evaluate(report, user_id=c["sub"], device_id=c["device_id"])
+    posture_policy.remember(sid, signals)
+    knock_ticket, ticket_info = knock_ticket_service.issue(
+        sid, wg_public_key, ticket_format.pack_posture(signals))
 
     events.record("fido2_authenticate", "ok", user_id=c["sub"], username=c["username"],
                   device_id=c["device_id"], source_ip=src_ip, source_geo=src_geo,
                   detail=f"access_jti={access_claims['jti']} refresh_jti={refresh_claims['jti']} "
-                         f"ticket_id={ticket_info['ticket_id']}")
+                         f"ticket_id={ticket_info['ticket_id']} "
+                         f"posture=0x{ticket_info['posture']:02x}")
     status(log, "Authentication COMPLETE - access, refresh and knock ticket issued", username=c["username"],
            device_id=c["device_id"], access_ttl_s=settings.idp_access_ttl_seconds,
            refresh_ttl_s=settings.idp_refresh_ttl_seconds,
-           hardware_attested=record.attested_hardware)
+           hardware_attested=record.attested_hardware,
+           posture=f"0x{ticket_info['posture']:02x}",
+           posture_report=("received" if report is not None else "none"))
 
     _log_access_token_before_send(c["username"], c["sub"], access_claims, access_token)
 
@@ -477,8 +494,8 @@ async def token_refresh(request: Request):
 async def token_knock_ticket(request: Request):
     """A fresh knock ticket for this session. A ticket lasts 60 s and the
     Gateway accepts it once, so the client asks for one per knock. It always
-    carries the WireGuard key bound at FIDO2 time; the request cannot name
-    another."""
+    carries the WireGuard key bound at FIDO2 time and the posture decided at
+    FIDO2 time; the request cannot name either."""
     body = await request.json()
     src_ip = client_ip(request)
     src_geo = geo.resolve(src_ip)
@@ -490,10 +507,18 @@ async def token_knock_ticket(request: Request):
         # Sessions opened before tickets existed have no bound key.
         raise HTTPException(status_code=409, detail="session has no WireGuard key; sign in again")
 
-    ticket, info = knock_ticket_service.issue(claims.get("sid", rec.jti), rec.wg_public_key)
+    # Same session as the original grant; fall back to the refresh jti for
+    # sessions issued before `sid` existed, exactly as /token/refresh does.
+    sid = claims.get("sid", rec.jti)
+    # The attested bits are re-read from the credential store here, so a device
+    # whose credential changed since login is rescored on this knock rather
+    # than coasting on what it was granted at login.
+    signals = posture_policy.for_session(sid, user_id=rec.user_id, device_id=rec.device_id)
+    ticket, info = knock_ticket_service.issue(
+        sid, rec.wg_public_key, ticket_format.pack_posture(signals))
     events.record("knock_ticket", "ok", user_id=rec.user_id, username=claims["username"],
                   device_id=rec.device_id, source_ip=src_ip, source_geo=src_geo,
-                  detail=f"ticket_id={info['ticket_id']}")
+                  detail=f"ticket_id={info['ticket_id']} posture=0x{info['posture']:02x}")
     return {
         "knock_ticket": base64.b64encode(ticket).decode("ascii"),
         "expires_in": settings.idp_knock_ticket_ttl_seconds,

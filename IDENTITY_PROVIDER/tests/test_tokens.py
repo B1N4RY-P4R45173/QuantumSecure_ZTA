@@ -97,10 +97,10 @@ def test_refresh_token_has_no_roles_or_acr_and_only_the_idp_accepts_it(idp):
 
 # --- knock ticket ------------------------------------------------------------
 
-def test_ticket_is_133_bytes_and_verifies(idp):
+def test_ticket_is_134_bytes_and_verifies(idp):
     sid = str(uuid.uuid4())
     ticket, info = knock_ticket.issue(sid, WG_KEY)
-    assert len(ticket) == ticket_format.TICKET_LEN == 133
+    assert len(ticket) == ticket_format.TICKET_LEN == 134
     parsed = ticket_format.verify(ticket, knock_ticket.public_key())
     assert parsed.sid == sid
     assert parsed.ticket_id == info["ticket_id"]

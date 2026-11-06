@@ -11,10 +11,18 @@ real SDP Controller reached over mTLS can replace AllowAllController later
 without the listener changing:
 
   request  {"type": "SPA_VERIFY", "client_ip", "access_port", "protocol",
-            "received_at", "identity": {sid, ticket_id, wg_public_key}}
+            "received_at", "identity": {sid, ticket_id, wg_public_key,
+                                        posture}}
 
 The identity is what the knock ticket carries: the IDP session id, not a
 username. A Controller that needs the user resolves the sid with the IDP.
+
+`posture` is the six device-posture signals the IDP packed into the ticket
+and signed (shared/utils/knock_ticket.POSTURE_BITS). The Gateway only
+forwards them after the ticket signature verifies, so a Controller may trust
+them exactly as far as it trusts the IDP — a client cannot assert its own
+posture here. An older client's ticket carries none, and the absent block
+must score as all-false rather than as an error: unknown is untrusted.
   approved {"type": "APPROVED", "session_id", "access_port", "protocol",
             "ttl_seconds"}
   denied   {"type": "DENIED", "reason"}

@@ -13,12 +13,12 @@ WHY THIS EXISTS
     class is the adapter between a verified SPA knock and those two modules.
 
 WHAT A KNOCK PROVES, AND WHAT IT DOES NOT
-    The knock ticket carries an IDP session id (sid), a ticket id and a
-    WireGuard public key. There is no username, no role and no MDM posture in
-    it, and this seam is in-process: it holds no IDP link, so the sid cannot
-    be resolved to a person here. Every field of the access request is
-    therefore either proven or assumed, and the assumptions are listed so a
-    reviewer can see what the decision actually rests on:
+    The knock ticket carries an IDP session id (sid), a ticket id, a
+    WireGuard public key and one byte of device posture. There is no username
+    and no role in it, and this seam is in-process: it holds no IDP link, so
+    the sid cannot be resolved to a person here. Every field of the access
+    request is therefore proven, attested or assumed, and the assumptions are
+    listed so a reviewer can see what the decision actually rests on:
 
     proven    `user.authenticated` and `user.mfa_verified`. The ticket is
               ES256-signed by the IDP, fresh, single-use, and was verified
@@ -28,9 +28,18 @@ WHAT A KNOCK PROVES, AND WHAT IT DOES NOT
               False would be asserting something untrue, would deny for the
               wrong reason (deny-admin-without-mfa), and would make every
               step-up rule in policies.yaml unreachable.
-    proven    `known_device`. A ticket is only issued against a credential
-              the IDP has enrolled, and it carries that device's WireGuard
-              public key. This is the ONLY posture signal credited here.
+    attested  the six posture signals, from the ticket's posture byte
+              (shared/utils/knock_ticket.py). The IDP sets them and its
+              signature covers them; spa/listener.py checked that signature
+              before this call and passes the unpacked dict in
+              identity["posture"]. Three of the six are the IDP's own
+              knowledge and the client cannot influence them at all:
+              device_managed (the IDP ran the hardware attestation itself),
+              known_device, location_expected. The other three are relayed
+              from the client's PostureReport and are self-asserted, so they
+              are weaker evidence: os_patched, disk_encrypted,
+              antivirus_running. This seam trusts the byte exactly as far as
+              it trusts the IDP and adds nothing of its own to it.
     assumed   `user.role`. GATEWAY_POLICY_DEFAULT_ROLE, "employee". `admin`
               is never assumed, so allow-admin cannot fire on a knock alone,
               and no privilege is invented from an unresolved sid.
@@ -40,24 +49,43 @@ WHAT A KNOCK PROVES, AND WHAT IT DOES NOT
     assumed   `context.action` = "write". The grant is an L3/L4 hole, and an
               open TCP port permits writes, so the worst case is the only
               honest one. The HTTP method is not visible until the proxy.
-    unknown   MDM posture (managed, patched, encrypted, antivirus, expected
-              location) and geography. Left False / "unknown" rather than
-              guessed. The scorer's own convention is that unknown is
-              untrusted, and nothing here overrides it.
+    unknown   geography. `context.country` stays "unknown" rather than
+              guessed, so deny-blocked-country only fires when an operator
+              pins a country. This is a different question from the attested
+              `location_expected` bit, which the IDP answers against the
+              user's own origin baseline, not against a country list.
 
-WHY THAT FAILS CLOSED, ON PURPOSE
-    With no MDM feed and no telemetry entry for the source IP, posture scores
-    10/60 (known_device alone) and the scorer awards half credit for absent
-    Suricata and ML evidence: 10 + 12 + 7 = 29/100. That is below
-    deny-untrusted-device's floor of 40, so the knock is denied. This is the
-    intended answer, not a bug: a device the detection pipeline has never
-    looked at has earned nothing. The same knock from an IP the pipeline
-    cleared scores 10 + 25 + 15 = 50 and is granted the narrow ACL. The fix
-    for a denial is to wire real posture and run the pipeline, never to
-    loosen the defaults here.
-    One consequence worth stating plainly: until an MDM feed supplies posture
-    signals, 50/100 is the ceiling, so acl=FULL is unreachable and every
-    grant is LIMITED. FULL requires posture evidence, by design.
+WHAT THE NUMBERS COME OUT AT
+    Posture is 60 of the scorer's 100 points, and for a source IP the
+    detection pipeline has never seen the scorer awards half credit for the
+    absent Suricata and ML evidence (12 + 7 = 19):
+
+      all six attested          60 + 19 = 79  ALLOW, acl=FULL
+      IDP-attested three only   35 + 19 = 54  ALLOW, acl=LIMITED
+      client-reported three     25 + 19 = 44  no allow rule matches, because
+        only                                  allow-employee-standard needs
+                                              50 -> implicit deny
+      no posture at all          0 + 19 = 19  under deny-untrusted-device's
+                                              floor of 40 -> denied
+
+    The middle rows are the whole point of splitting the signals by who
+    attests them. Self-asserted posture alone is 25 points and cannot reach a
+    grant; the three the IDP vouches for are worth 35 and earn the narrow
+    ACL; only the two sets together clear FULL. The same knock from an IP the
+    pipeline has cleared gets 25 + 15 instead of 19, which is why running the
+    detection pipeline moves a decision as much as posture does.
+
+    A knock whose identity carries no `posture` block - a client or IDP older
+    than ticket version 2 - scores all-false and lands on the last row. It
+    degrades to a denial rather than an error, because unknown is untrusted;
+    that is the scorer's own convention and nothing here overrides it.
+
+    One number worth knowing before reading a LIMITED grant as a bug:
+    location_expected is false in practice today, because
+    IDENTITY_PROVIDER/geo/resolver.py is still a Milestone-4 stub and the IDP
+    will not attest what it cannot compute. That costs 10 points, so a device
+    reporting everything else honestly scores 69 on an unseen IP - one short
+    of FULL - and 90 once the pipeline has cleared its IP.
 
 NOTE ON STATE
     Unlike the stand-in, this keeps no session dictionary of its own.
@@ -127,16 +155,13 @@ LIMITED_HOSTS = tuple(
     h.strip() for h in os.environ.get("GATEWAY_POLICY_LIMITED_HOSTS", "resource-node").split(",")
     if h.strip())
 
-# The posture signals an operator asserts for this deployment, for the case
-# where MDM exists but is not yet feeding the Gateway. Empty by default: the
-# only signal credited without evidence is the one the ticket itself proves.
-ASSUMED_SIGNALS = tuple(
-    s.strip() for s in os.environ.get("GATEWAY_POLICY_ASSUMED_SIGNALS", "").split(",")
-    if s.strip())
-
-# Proven by the knock ticket: the IDP enrolled this device and the ticket
-# carries its WireGuard key.
-PROVEN_SIGNALS = ("known_device",)
+# Posture comes from the ticket's signed byte and from nowhere else. There is
+# deliberately no environment knob for asserting a signal locally, and no
+# hard-coded credit for `known_device` even though a ticket is only ever issued
+# against an enrolled credential: either would let this seam hand the scorer a
+# signal the IDP did not sign, which is the exact gap the posture byte exists to
+# close. The IDP already reports known_device in the byte, so taking it from
+# there instead costs nothing and keeps one authority for all six.
 
 UNKNOWN_PORT_CLASS = os.environ.get("GATEWAY_POLICY_UNKNOWN_PORT_CLASS", "confidential")
 
@@ -231,7 +256,11 @@ class PolicyController:
                suricata=f"{breakdown['suricata']}/{trust_scorer.SURICATA_MAX}",
                ml=f"{breakdown['ml']}/{trust_scorer.ML_MAX}",
                resource=request["resource"]["classification"],
-               role=request["user"]["role"], action=request["context"]["action"])
+               role=request["user"]["role"], action=request["context"]["action"],
+               # Which signals the IDP actually attested, so a score can be
+               # read back to its evidence without turning on debug logging.
+               attested=",".join(n for n, held in request["device"]["signals"].items() if held)
+                        or "none")
         for note in breakdown["notes"]:
             status(log, f"  trust | {note}")
 
@@ -330,17 +359,7 @@ class PolicyController:
         sid = identity.get("sid", "unknown")
         access_port = msg["access_port"]
         protocol = msg.get("protocol", "tcp")
-
-        # Start from the scorer's own weight table so a new posture signal
-        # there defaults to untrusted here without this file being touched.
-        signals: dict[str, bool] = {name: False for name in trust_scorer.POSTURE_WEIGHTS}
-        for name in PROVEN_SIGNALS + ASSUMED_SIGNALS:
-            if name in signals:
-                signals[name] = True
-        # `no_suricata_alerts` / `ml_anomaly_score_ok` are deliberately absent.
-        # trust_scorer reads them as a standalone substitute for telemetry and
-        # would award full IDS/ML credit; leaving them out keeps the scorer's
-        # conservative half-credit for a device the pipeline has not seen.
+        signals = self._attested_signals(identity)
 
         return {
             "user": {
@@ -351,9 +370,14 @@ class PolicyController:
                 "mfa_verified": True,
             },
             "device": {
+                # `managed` and `known` are the same two facts as the matching
+                # signals, named the way policies.yaml expressions can reach
+                # them. They are read off the attested byte rather than fixed
+                # here, so a policy author cannot be shown device.managed ==
+                # False next to a posture score that already credited it.
                 "os": "unknown",
-                "managed": False,
-                "known": True,
+                "managed": signals.get("device_managed", False),
+                "known": signals.get("known_device", False),
                 "signals": signals,
             },
             "resource": {
@@ -369,6 +393,42 @@ class PolicyController:
                 "action": DEFAULT_ACTION,
             },
         }
+
+    @staticmethod
+    def _attested_signals(identity: dict) -> dict[str, bool]:
+        """The posture the IDP signed into the knock ticket, as the scorer's
+        signal dict.
+
+        spa/listener.py unpacks the ticket's posture byte with
+        shared.utils.knock_ticket.unpack_posture() and puts the result in
+        identity["posture"], already under these names. The work left here is
+        the three rules that keep a missing or odd value from buying trust:
+
+        1. The starting point is the scorer's own weight table, all False, so
+           a signal added to trust_scorer defaults to untrusted here without
+           this file being touched.
+        2. Only a value of exactly True credits a signal. Absent, None and
+           anything truthy-but-not-True read as untrusted, matching
+           knock_ticket.pack_posture() at the other end of the wire and
+           trust_scorer._posture_score() downstream. An identity with no
+           `posture` block at all - a client or IDP older than ticket
+           version 2 - therefore yields all-False and degrades to a denial
+           instead of raising.
+        3. Names the scorer does not weigh are dropped rather than passed
+           through. That matters for more than tidiness: trust_scorer reads
+           `no_suricata_alerts` and `ml_anomaly_score_ok` out of this same
+           dict as a standalone substitute for telemetry and would award full
+           IDS and ML credit for them. Filtering here means no posture
+           payload can reach into the detection half of the score, so a
+           device the pipeline has not seen keeps its conservative half
+           credit.
+        """
+        attested = identity.get("posture")
+        signals = {name: False for name in trust_scorer.POSTURE_WEIGHTS}
+        if isinstance(attested, dict):
+            for name in signals:
+                signals[name] = attested.get(name) is True
+        return signals
 
     # -- inputs ------------------------------------------------------------
 
