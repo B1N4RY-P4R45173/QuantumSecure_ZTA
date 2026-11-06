@@ -14,6 +14,15 @@
         "value": "instrument serif",
         "createdAt": "2026-11-06T19:39:00.802Z",
         "reason": "diagram-design skill mandates this exact face: SKILL.md section 5 requires Instrument Serif for the H1 title and italic callouts, and its taste gate checks for it. User chose 'Keep default' when asked whether to customise the style guide before drawing."
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          "docs/diagrams/ztna-architecture.html"
+        ],
+        "createdAt": "2026-11-06T21:58:00.457Z",
+        "reason": "SVG figure labels, not UI chrome. The diagram-design skill the user invoked by name mandates this type ramp (zone eyebrows 7px, arrow labels 8px, sublabels 9px) and its own taste gate fails a figure that departs from it; user chose 'Keep default' when asked about the style guide. Raised with the user once already and left standing; suppressing now with the print mitigation disclosed rather than asking a third time."
       }
     ]
   }
