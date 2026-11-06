@@ -169,6 +169,9 @@ class SPAListener:
             sid=ticket.sid,
             acl=decision.get("acl", segmentation.ACL_FULL),
             allowed_hosts=decision.get("allowed_hosts"),
+            # Carried so the Controller can re-score this session later
+            # without a fresh knock.
+            posture_signals=identity.get("posture"),
         )
         if session is None:
             # The Controller approved, but its ACL permits no destination. Stay

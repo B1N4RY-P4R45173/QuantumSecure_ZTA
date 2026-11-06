@@ -293,6 +293,29 @@ class InspectingProxy:
         body = _read_body(tls, verdict.content_length, pipelined)
         entry.bytes_in += max(0, len(body) - len(pipelined))
 
+        # Re-check the lease here, not just at accept. Everything above this
+        # line can block: the handshake, then _read_head waiting for a client
+        # that may take its time, then _read_body. A client that connects,
+        # lets its lease run out, and only then sends its request would
+        # otherwise be served against a session that no longer exists -
+        # measured, before this check existed, as a 200 returned with the
+        # session table empty.
+        #
+        # This is also what makes revocation bite. The Controller shares this
+        # process and can call TABLE.revoke_sid() at any moment; without a
+        # re-check, a revoked session would keep being served until the
+        # client chose to disconnect. Authorisation is a lease, so it has to
+        # be re-read at the point it is spent.
+        session = self._live_session(peer_ip)
+        if session is None:
+            entry.refuse("lease expired or revoked before forwarding")
+            status(log, "PROXY REFUSED - lease gone before forward", peer=peer_ip,
+                   port=self._port)
+            entry.bytes_out += _send(tls, error_response(
+                403, "session expired or revoked"))
+            return tls
+        entry.bind(session)
+
         try:
             self._router.check_acl(session)
         except DestinationRefused as exc:

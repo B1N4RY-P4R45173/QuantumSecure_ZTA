@@ -23,6 +23,7 @@ stand-in; the real SDP Controller will replace it.
 
 import os
 import sys
+import threading
 
 # Make the shared/ package (project root, one level up) importable. Each
 # component runs with its own directory as the import root (`from spa import
@@ -47,6 +48,27 @@ log = get_logger("Gateway")
 # nftables backend; the iptables chain already ends in a blanket DROP.
 PROTECTED_PORTS = [int(p) for p in
                    os.environ.get("GATEWAY_PROTECTED_PORTS", "22,80,443").split(",") if p.strip()]
+
+# How often live sessions are re-scored against current evidence. This is the
+# interval over which a device that becomes untrustworthy keeps its access,
+# so it is a security parameter, not a tuning knob: shorter means a tighter
+# window and more policy evaluations per second.
+REEVALUATE_EVERY_SECONDS = float(os.environ.get("GATEWAY_REEVALUATE_SECONDS", "10"))
+
+
+def _reevaluation_loop(controller, stop: threading.Event) -> None:
+    """Re-score live sessions until told to stop.
+
+    Runs in its own thread so a slow policy evaluation cannot stall the SPA
+    listener. Never lets an exception kill the loop: a Gateway that silently
+    stopped re-evaluating would look healthy while quietly reverting to
+    authorise-once.
+    """
+    while not stop.wait(REEVALUATE_EVERY_SECONDS):
+        try:
+            controller.reevaluate()
+        except Exception as exc:
+            status(log, "Re-evaluation pass failed", error=f"{type(exc).__name__}: {exc}")
 
 
 def _check_idp_jwks(ctx) -> None:
@@ -119,6 +141,21 @@ if __name__ == "__main__":
         # rather than letting it look healthy.
         status(log, "TLS proxy NOT started - data path unavailable", reason=str(exc))
 
+    # Continuous re-evaluation. Without this a grant is only ever judged at
+    # admission, which is the behaviour of a firewall rule rather than of a
+    # policy decision. The allow-all stand-in has nothing to re-evaluate.
+    stop_reevaluation = threading.Event()
+    reevaluator: threading.Thread | None = None
+    if hasattr(controller, "reevaluate"):
+        reevaluator = threading.Thread(
+            target=_reevaluation_loop, args=(controller, stop_reevaluation),
+            daemon=True, name="policy-reevaluate")
+        reevaluator.start()
+        status(log, "Continuous re-evaluation started",
+               every=f"{REEVALUATE_EVERY_SECONDS:g}s")
+    else:
+        status(log, "Continuous re-evaluation NOT running - controller cannot re-score")
+
     listener = SPAListener(kem_private_key, idp_link.jwks_url(), controller, jwks_ssl_context=ctx)
     status(log, "SPA listener starting", port=settings.gateway_spa_port)
     try:
@@ -126,6 +163,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         status(log, "Shutting down")
     finally:
+        stop_reevaluation.set()
         # Close every lease and remove the chain, so a restart does not strand
         # accept rules in the kernel.
         if proxy is not None:

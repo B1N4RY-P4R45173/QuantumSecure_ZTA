@@ -42,6 +42,12 @@ class Session:
     hosts: tuple[str, ...]        # () = any destination (FULL)
     opened_at: float
     expires_at: float
+    # The posture the IDP attested in the knock ticket that opened this
+    # session. Kept so the Controller can re-score a live session without a
+    # fresh knock: posture arrives signed inside a ticket and there is no
+    # honest way to re-derive it between knocks, so the admission-time value
+    # is carried forward rather than guessed at.
+    posture_signals: dict[str, bool] = field(default_factory=dict)
     closed_reason: str | None = field(default=None)
 
     @property
@@ -64,11 +70,15 @@ class SessionTable:
 
     def open(self, *, session_id: str, sid: str, client_ip: str, access_port: int,
              protocol: str, ttl_seconds: float, acl: str = "FULL",
-             hosts: tuple[str, ...] = ()) -> Session:
+             hosts: tuple[str, ...] = (),
+             posture_signals: dict[str, bool] | None = None) -> Session:
         """Insert the firewall rules for one grant and record it.
 
         `hosts` empty means the hole reaches any destination. One rule is
         inserted per host otherwise, which is how LIMITED is enforced.
+
+        `posture_signals` is what the IDP attested in the knock ticket, kept
+        so the Controller can re-score this session later.
         """
         now = time.time()
         targets: tuple[str | None, ...] = hosts or (None,)
@@ -79,6 +89,7 @@ class SessionTable:
             session_id=session_id, sid=sid, client_ip=client_ip,
             access_port=access_port, protocol=protocol, acl=acl, hosts=hosts,
             opened_at=now, expires_at=now + ttl_seconds,
+            posture_signals=dict(posture_signals or {}),
         )
         with self._lock:
             self._sessions[session_id] = session

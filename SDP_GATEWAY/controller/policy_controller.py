@@ -113,6 +113,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from SDP_CONTROLLER import engine, trust_scorer  # noqa: E402
+from firewall.sessions import TABLE  # noqa: E402
 from shared.config.settings import settings  # noqa: E402
 from shared.utils.logger import get_logger, status  # noqa: E402
 
@@ -292,6 +293,99 @@ class PolicyController:
             "acl": acl,
             "allowed_hosts": list(hosts),
         }
+
+    # -- continuous re-evaluation ------------------------------------------
+
+    def reevaluate(self) -> list[str]:
+        """Re-score every live session and revoke the ones that now fail.
+
+        This is what separates Zero Trust from authorise-once. A grant made
+        at admission reflects the evidence available in that instant; the
+        evidence then changes. Suricata raises an alert against the device,
+        the detection pipeline rewrites the telemetry snapshot, an operator
+        edits policies.yaml. Without re-evaluation the client keeps its
+        access until its lease happens to run out, which is the behaviour of
+        a firewall rule, not of a policy decision.
+
+        Re-reads policy and telemetry each pass, so an operator who tightens
+        a rule or a detector that flags a device takes effect on the next
+        cycle rather than at the next login.
+
+        Returns the session ids revoked, for the caller to log.
+
+        Deliberately re-runs the ORIGINAL decision inputs for the session,
+        not a fresh posture read: posture arrives attested inside a knock
+        ticket, and there is no honest way to re-derive it here between
+        knocks. What is re-read is everything the Gateway can observe for
+        itself - IDS alerts, ML verdicts, policy. A device whose posture
+        decays is caught at its next knock, not mid-session; that gap is
+        worth stating rather than papering over.
+        """
+        live = TABLE.active()
+        if not live:
+            return []
+
+        try:
+            policies, telemetry = self._current_inputs()
+        except Exception as exc:
+            # Same rule as send(): an unreadable policy file is not a licence
+            # to keep existing sessions open on a policy nobody can read.
+            # Revoking everything is the safe direction, and loud.
+            status(log, "RE-EVALUATION - policy load failed, revoking all live sessions",
+                   sessions=len(live), error=str(exc))
+            revoked = []
+            for session in live:
+                revoked.extend(s.session_id for s in
+                               TABLE.revoke_sid(session.sid, "policy unreadable"))
+            return revoked
+
+        revoked: list[str] = []
+        for session in live:
+            if session.expired:
+                continue  # the reaper owns this one
+            verdict, score, reason = self._rescore(session, policies, telemetry)
+            if verdict:
+                continue
+            status(log, "REVOKING - session no longer passes policy",
+                   session=session.session_id[:8], sid=session.sid,
+                   client_ip=session.client_ip, score=score, reason=reason,
+                   had_remaining=f"{session.remaining:.1f}s")
+            revoked.extend(s.session_id for s in
+                           TABLE.revoke_sid(session.sid, f"re-evaluation: {reason}"))
+
+        if revoked:
+            status(log, "Re-evaluation complete", checked=len(live), revoked=len(revoked))
+        return revoked
+
+    def _rescore(self, session, policies, telemetry) -> tuple[bool, int, str]:
+        """Score one live session against current evidence.
+
+        Rebuilds the same request shape send() used, from what the session
+        itself records, so the second decision is comparable with the first.
+        """
+        msg = {
+            "client_ip": session.client_ip,
+            "access_port": session.access_port,
+            "protocol": session.protocol,
+            "identity": {"sid": session.sid, "posture": session.posture_signals},
+        }
+        try:
+            request = trust_scorer.enrich_request(self._build_request(msg), telemetry=telemetry)
+            decision = engine.evaluate(policies, request)
+        except Exception as exc:
+            # A session that cannot be scored cannot be justified.
+            return False, 0, f"re-scoring failed: {exc}"
+
+        score = int(request["device"]["trust_score"])
+        if decision.verdict != "ALLOW":
+            return False, score, "; ".join(decision.reasons)
+
+        acl, _hosts, refusal = self._acl_for(score, decision.obligations)
+        if refusal is not None:
+            return False, score, refusal
+        if acl == ACL_DENY:
+            return False, score, "acl collapsed to DENY"
+        return True, score, ""
 
     # -- decision -> grant -------------------------------------------------
 

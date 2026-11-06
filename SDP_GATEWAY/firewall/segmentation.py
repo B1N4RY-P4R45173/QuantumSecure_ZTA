@@ -38,7 +38,8 @@ def grant_temporary_access(client_ip: str, port: int, protocol: str = "tcp",
                            ttl_seconds: int = DEFAULT_TTL_SECONDS,
                            *, session_id: str | None = None, sid: str = "unknown",
                            acl: str = ACL_FULL,
-                           allowed_hosts: tuple[str, ...] | list[str] | None = None):
+                           allowed_hosts: tuple[str, ...] | list[str] | None = None,
+                           posture_signals: dict[str, bool] | None = None):
     """Open one leased hole for `client_ip`, scoped by `acl`.
 
     Returns the Session, or None when the ACL permits nothing. LIMITED with no
@@ -72,4 +73,5 @@ def grant_temporary_access(client_ip: str, port: int, protocol: str = "tcp",
         ttl_seconds=ttl_seconds,
         acl=acl,
         hosts=hosts,
+        posture_signals=posture_signals,
     )
