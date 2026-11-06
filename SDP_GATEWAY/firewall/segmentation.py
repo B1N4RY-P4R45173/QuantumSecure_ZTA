@@ -8,11 +8,15 @@ reach:
   LIMITED  only the hosts the Controller named
   DENY     never reaches here; the listener drops the knock first
 
-That is the whole of what an ACL can mean at layers 3 and 4. A read-only or
-per-endpoint restriction would need the proxy to inspect the application
-protocol, which is deliberately out of scope — enforcement stays
-protocol-agnostic so the same Gateway fronts SSH, HTTPS and an IoT sensor
-without understanding any of them.
+That is the whole of what an ACL can mean at layers 3 and 4, which is the
+layer this module works at: a destination set, not a set of permitted
+operations.
+
+A read-only or per-endpoint restriction would have to be enforced by
+proxy/ and traffic/, which do read the decrypted request and could express
+it. It is not implemented there either, so no ACL in this system currently
+restricts what a client may DO with a destination it is allowed to reach —
+only which destinations those are.
 
 The lease itself is held by firewall.sessions.TABLE, whose reaper closes it;
 this module only translates a decision into a grant.

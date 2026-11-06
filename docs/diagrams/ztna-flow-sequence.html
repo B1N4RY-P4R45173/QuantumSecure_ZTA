@@ -47,12 +47,12 @@
 <body>
   <div class="frame">
     <p class="eyebrow">Sequence · Quantum-Secure ZTNA</p>
-    <h1>Access flow as built — the Controller approves everything</h1>
+    <h1>Access flow as built — boot, admission, then an inspected request</h1>
 
     <div class="diagram-container">
-      <svg viewBox="0 0 960 648" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ztna-seq-title ztna-seq-desc">
+      <svg viewBox="0 0 960 666" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ztna-seq-title ztna-seq-desc">
         <title id="ztna-seq-title">ZTNA access flow — current state</title>
-        <desc id="ztna-seq-desc">A client authenticates to the identity provider with FIDO2, receives a token and the gateway's post-quantum public key, then opens a firewall pinhole with a single encrypted UDP knock; the controller that should decide the request is an allow-all stub.</desc>
+        <desc id="ztna-seq-desc">A client authenticates to the identity provider with FIDO2 and receives a knock ticket carrying its attested device posture, opens a firewall pinhole with a single post-quantum UDP knock that the policy controller scores and approves, then sends its request over TLS which the gateway terminates, inspects in the clear and forwards to the resource.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
@@ -62,11 +62,11 @@
         <rect width="100%" height="100%" fill="#f5f5f5"/>
 
         <!-- ============ lifelines ============ -->
-        <line x1="108" y1="112" x2="108" y2="548" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-        <line x1="294" y1="112" x2="294" y2="548" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-        <line x1="480" y1="112" x2="480" y2="548" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-        <line x1="666" y1="112" x2="666" y2="548" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-        <line x1="852" y1="112" x2="852" y2="548" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="108" y1="112" x2="108" y2="566" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="294" y1="112" x2="294" y2="566" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="480" y1="112" x2="480" y2="566" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="666" y1="112" x2="666" y2="566" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="852" y1="112" x2="852" y2="566" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
 
         <!-- ============ phase rules ============ -->
         <line x1="33" y1="132" x2="927" y2="132" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
@@ -82,6 +82,7 @@
         <rect x="290" y="236" width="8" height="96" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
         <rect x="476" y="372" width="8" height="116" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
         <rect x="662" y="424" width="8" height="32" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="476" y="520" width="8" height="22" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
 
         <!-- ============ messages (arrows before boxes) ============ -->
 
@@ -139,10 +140,19 @@
         <rect x="273" y="468" width="42" height="12" rx="2" fill="#f5f5f5"/>
         <text x="294" y="477" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SPA_OK</text>
 
-        <!-- 11. Client -> Resource : direct TCP through the pinhole -->
-        <line x1="108" y1="524" x2="844" y2="524" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <rect x="449" y="504" width="62" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="480" y="513" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">DIRECT TCP</text>
+        <!-- 11. Client -> Gateway : the request, over TLS through the pinhole -->
+        <line x1="108" y1="520" x2="472" y2="520" stroke="#bf4520" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+        <rect x="259" y="500" width="70" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="294" y="509" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">TLS REQUEST</text>
+
+        <!-- what the gateway does between receiving and forwarding -->
+        <rect x="492" y="498" width="128" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="492" y="507" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.04em">DECRYPT · INSPECT · RE-CHECK LEASE</text>
+
+        <!-- 12. Gateway -> Resource : terminated, inspected, re-forwarded in the clear -->
+        <line x1="484" y1="542" x2="844" y2="542" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="631" y="522" width="66" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="664" y="531" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">PLAIN HTTP</text>
 
         <!-- ============ actor boxes (drawn last) ============ -->
 
@@ -172,11 +182,11 @@
 
         <!-- Controller (FOCAL — the stub) -->
         <rect x="591" y="56" width="150" height="56" rx="6" fill="#f5f5f5"/>
-        <rect x="591" y="56" width="150" height="56" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.6"/>
-        <rect x="599" y="62" width="30" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.40)" stroke-width="0.8"/>
-        <text x="614" y="71" fill="#bf4520" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">STUB</text>
+        <rect x="591" y="56" width="150" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+        <rect x="599" y="62" width="40" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="619" y="71" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">POLICY</text>
         <text x="666" y="92" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SDP Controller</text>
-        <text x="666" y="105" fill="#bf4520" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">allow-all</text>
+        <text x="666" y="105" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">trust + 13 rules</text>
 
         <!-- Resource -->
         <rect x="777" y="56" width="150" height="56" rx="6" fill="#f5f5f5"/>
@@ -187,23 +197,20 @@
         <text x="852" y="105" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">python server</text>
 
         <!-- ============ legend ============ -->
-        <line x1="33" y1="580" x2="927" y2="580" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-        <text x="33" y="598" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="33" y1="598" x2="927" y2="598" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="33" y="616" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
 
-        <line x1="110" y1="594" x2="138" y2="594" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-        <text x="146" y="598" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">CALL</text>
+        <line x1="110" y1="612" x2="138" y2="612" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="146" y="616" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">CALL</text>
 
-        <line x1="206" y1="594" x2="234" y2="594" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-        <text x="242" y="598" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">RETURN</text>
+        <line x1="206" y1="612" x2="234" y2="612" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="242" y="616" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">RETURN</text>
 
-        <line x1="318" y1="594" x2="346" y2="594" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
-        <text x="354" y="598" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">MTLS TO IDP</text>
+        <line x1="318" y1="612" x2="346" y2="612" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="354" y="616" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">MTLS TO IDP</text>
 
-        <line x1="470" y1="594" x2="498" y2="594" stroke="#bf4520" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
-        <text x="506" y="598" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">ML-KEM-768 KNOCK</text>
-
-        <rect x="690" y="588" width="12" height="12" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.4"/>
-        <text x="710" y="598" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">NO POLICY ENGINE YET</text>
+        <line x1="470" y1="612" x2="498" y2="612" stroke="#bf4520" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+        <text x="506" y="616" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">CLIENT ENCRYPTED LEG</text>
       </svg>
     </div>
   </div>

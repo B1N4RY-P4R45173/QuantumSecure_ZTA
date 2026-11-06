@@ -9,9 +9,16 @@ registration / authentication** flow:
 | **Client** (device agent) | `SDP_CLIENT/` | CLI agent. Does first-factor login, selects a hardware trust anchor, runs the FIDO2 ceremony against the IDP. |
 
 > The Gateway and Resource Node are **not** needed for this flow and are
-> intentionally left out of this guide. The SDP Controller has been removed
-> from the project: its FIDO2/IDP responsibilities live in `IDENTITY_PROVIDER/`, and
-> the Gateway now verifies access tokens against the IDP's JWKS directly.
+> intentionally left out of this guide — see
+> [`SDP_GATEWAY/README.md`](SDP_GATEWAY/README.md) for the data path.
+>
+> The SDP Controller's **FIDO2 and identity** responsibilities moved to
+> `IDENTITY_PROVIDER/`, and the Gateway verifies access tokens against the
+> IDP's JWKS directly. `SDP_CONTROLLER/` itself has **not** been removed: its
+> `trust_scorer.py`, `engine.py` and `policies.yaml` are imported by
+> `SDP_GATEWAY/controller/policy_controller.py`, are copied into the Gateway
+> image, and decide every access request. It runs in the Gateway's process
+> rather than as a service of its own.
 
 The two processes run **side by side in separate terminals**. Start the IDP
 first, provision a user, then start the Client.
