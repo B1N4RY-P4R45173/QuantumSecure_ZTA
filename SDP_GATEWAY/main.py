@@ -30,10 +30,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from controller.allow_all import AllowAllController
+from controller.policy_controller import PolicyController
 from firewall import rules as firewall_rules
 from firewall.sessions import TABLE as sessions
 from mtls import idp_link
 from pqc import kem
+from proxy.handler import InspectingProxy, ProxyNotConfigured
 from spa.listener import SPAListener
 from shared.ca.cert_utils import fingerprint
 from shared.config.settings import settings
@@ -88,10 +90,34 @@ if __name__ == "__main__":
     # One reaper for every lease, instead of a timer per grant.
     sessions.start_reaper()
 
-    # Stand-in until the real SDP Controller exists: approves every knock the
-    # Gateway has verified. Swap it here; the listener does not change.
-    controller = AllowAllController()
-    status(log, "Controller: allow-all stand-in (no policy engine)")
+    # The real decision maker: scores device trust and evaluates policies.yaml.
+    # GATEWAY_ALLOW_ALL=1 falls back to the stand-in, for isolating a data-path
+    # problem from a policy one during a demo. It is never the default, because
+    # a Gateway that silently approves everything looks identical to one that
+    # is working.
+    if os.environ.get("GATEWAY_ALLOW_ALL") == "1":
+        controller = AllowAllController()
+        status(log, "Controller: allow-all stand-in (GATEWAY_ALLOW_ALL=1, NO POLICY ENGINE)")
+    else:
+        controller = PolicyController()
+        status(log, "Controller: policy engine + trust scorer")
+
+    # The data path. Terminates the client's TLS, inspects the decrypted
+    # request, and re-forwards it to the resource over the cleartext inner
+    # leg. It refuses any peer without a live SPA session, so it cannot be
+    # reached by knocking alone.
+    proxy = None
+    try:
+        proxy = InspectingProxy()
+        proxy.start()
+        status(log, "TLS proxy started", port=settings.client_access_port,
+               upstream=f"{os.environ.get('RESOURCE_HOST', 'resource-node')}:"
+                        f"{os.environ.get('RESOURCE_PORT', '7443')}")
+    except ProxyNotConfigured as exc:
+        # No proxy certificate yet. The control plane still works, so the SPA
+        # flow can be demonstrated; say plainly that the data path is down
+        # rather than letting it look healthy.
+        status(log, "TLS proxy NOT started - data path unavailable", reason=str(exc))
 
     listener = SPAListener(kem_private_key, idp_link.jwks_url(), controller, jwks_ssl_context=ctx)
     status(log, "SPA listener starting", port=settings.gateway_spa_port)
@@ -102,6 +128,8 @@ if __name__ == "__main__":
     finally:
         # Close every lease and remove the chain, so a restart does not strand
         # accept rules in the kernel.
+        if proxy is not None:
+            proxy.stop()
         sessions.stop()
         firewall_rules.teardown()
         status(log, "Gateway stopped")

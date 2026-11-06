@@ -1,0 +1,21 @@
+# Reference defaults only — the running node reads all configuration from
+# environment variables (see shared/config/settings.py and ../.env.example).
+# This file is not parsed at runtime; it documents the same values for operators.
+
+# Plain HTTP, not TLS: the Gateway terminates the client's TLS on 443,
+# inspects the plaintext, and re-forwards here over data-plane-net.
+resource_host: 0.0.0.0
+resource_port: 7443
+
+# The audience an access token must name (IDP_RESOURCE_AUDIENCE). The IDP
+# stamps it into every access token alongside its own; both sides read the
+# same variable.
+idp_resource_audience: resource-node
+
+# The IDP's RS256 public key, copied in by the operator. Relative to this
+# component's directory. There is no route from here to the IDP, so tokens
+# are verified offline against this file.
+resource_jwt_public_key_path: ./certs/idp_jwt_public.pem
+
+# Label reported in the `resource` field of an /api/data response.
+resource_name: resource-node

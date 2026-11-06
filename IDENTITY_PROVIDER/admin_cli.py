@@ -27,9 +27,15 @@ Once per deployment, then once per Gateway:
     python admin_cli.py init-ca
     python admin_cli.py issue-idp-cert --host localhost --host sdp-idp --host 192.168.1.10
     python admin_cli.py issue-gateway-cert --id gw-1
+    python admin_cli.py issue-proxy-cert --id gw-1
         -> copy the printed folder to the Gateway machine as SDP_GATEWAY/certs/pki/
     python admin_cli.py list-gateways
     python admin_cli.py revoke-gateway --id gw-1
+
+issue-gateway-cert and issue-proxy-cert are not interchangeable. The first
+mints a CLIENT certificate: the Gateway's identity on the IDP link. The second
+mints a SERVER certificate: the one the Gateway presents to clients whose TLS
+it terminates. A client certificate cannot be served, so a Gateway needs both.
 """
 
 from __future__ import annotations
@@ -55,6 +61,13 @@ from shared.config.settings import settings
 
 # Where issue-gateway-cert writes each Gateway's bundle, for the admin to copy.
 GATEWAY_BUNDLE_DIR = Path("./certs/pki/gateways")
+
+# Names a client may dial the Gateway's TLS proxy by, and so the names its
+# proxy certificate must carry: the compose service name, plus the loopback
+# forms used when client and Gateway share a host. A client checks the name it
+# dialled against this list and aborts the handshake before it ever presents a
+# token, so a missing name looks like an outage, not an authorisation failure.
+PROXY_SAN_HOSTS = ["sdp-gateway", "localhost", "127.0.0.1"]
 
 
 def _init_ca(_args: argparse.Namespace) -> int:
@@ -102,6 +115,27 @@ def _issue_gateway_cert(args: argparse.Namespace) -> int:
     print("  gateway.crt, gateway.key, ca.crt")
     print("Copy that folder to the Gateway machine as SDP_GATEWAY/certs/pki/ .")
     print("gateway.key is that Gateway's identity: move it, do not leave copies around.")
+    return 0
+
+
+# The Gateway terminates the client's TLS itself - decrypt, inspect, re-forward -
+# so it has to present a certificate of its own. It is the project CA that signs
+# it and the client that trusts that CA, which is what separates this from the
+# interception it otherwise looks exactly like.
+def _issue_proxy_cert(args: argparse.Namespace) -> int:
+    ca = _load_ca()
+    if ca is None:
+        return 1
+    bundle = GATEWAY_BUNDLE_DIR / args.id
+    extra = [h for h in (args.host or []) if h not in PROXY_SAN_HOSTS]
+    hosts = PROXY_SAN_HOSTS + extra
+    cert_utils.issue(*ca, common_name="sdp-gateway", kind="server", out_dir=bundle,
+                     hosts=hosts, file_stem="proxy")
+    print(f"issued the client-facing proxy certificate for {args.id!r} -> {bundle}/")
+    print(f"  proxy.crt, proxy.key  valid for {', '.join(hosts)}")
+    print("It sits in the same bundle as gateway.crt: copy the folder to the Gateway "
+          "machine as SDP_GATEWAY/certs/pki/ .")
+    print("proxy.key lets its holder read every client's plaintext - treat it like gateway.key.")
     return 0
 
 
@@ -297,6 +331,16 @@ def main() -> int:
     p = sub.add_parser("issue-gateway-cert", help="a Gateway's certificate bundle")
     p.add_argument("--id", required=True, help="the Gateway's id, e.g. gw-1")
     p.set_defaults(func=_issue_gateway_cert)
+
+    p = sub.add_parser("issue-proxy-cert",
+                       help="the server certificate a Gateway presents to clients it "
+                            "terminates TLS for")
+    p.add_argument("--id", required=True,
+                   help="the Gateway's id, e.g. gw-1 - writes into that Gateway's bundle")
+    p.add_argument("--host", action="append",
+                   help="another name or IP clients reach this Gateway by; repeat for "
+                        f"several ({', '.join(PROXY_SAN_HOSTS)} are always included)")
+    p.set_defaults(func=_issue_proxy_cert)
 
     p = sub.add_parser("list-gateways")
     p.set_defaults(func=_list_gateways)

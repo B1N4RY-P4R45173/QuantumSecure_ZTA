@@ -18,6 +18,11 @@ admin-only):
        key, send the encrypted access token, and wait for SPA_OK. A failed
        first knock ends the run. Each refreshed access token is knocked
        again so the Gateway always sees the current one.
+    6. Data path (dataplane/): a TLS request through the port the knock just
+       opened, verified against the project CA, carrying the access token as
+       a bearer. SPA_OK only proves a pinhole exists; this proves access.
+       It runs after every accepted knock, so a re-knock is confirmed by a
+       real request rather than by the Gateway's reply alone.
 
 Every stage is its own module; this file only sequences them in one process.
 """
@@ -37,6 +42,7 @@ import uuid
 import requests
 
 from agent.token_refresh import TokenRefresher
+from dataplane import session
 from fido2_agent import client as fido2_client
 from fido2_agent import credential_cache
 from posture import checker
@@ -108,13 +114,37 @@ def _knock(gateway_pubkey: bytes, knock_ticket: bytes) -> bool:
     )
 
 
+def _use_data_path(access_token: str) -> bool:
+    """One request across the port the knock opened, logged either way.
+
+    Not fatal. The IDP session and the pinhole are both still valid if this
+    fails — the Gateway's proxy or the resource behind it may simply not be
+    up yet — and the next accepted knock tries again. A missing project CA
+    is the one case worth shouting about, because nothing downstream will
+    ever work until it is placed.
+    """
+    try:
+        result = session.fetch(access_token, settings.gateway_ip, settings.client_access_port)
+    except session.CaCertMissing as exc:
+        status(log, "Data path unusable - no project CA to verify the Gateway", error=str(exc))
+        return False
+    except session.DataPlaneError as exc:
+        status(log, "Data path request failed", error=str(exc))
+        return False
+
+    status(log, "Data path request complete", resource=session.RESOURCE_PATH,
+           http_status=result.status_code, elapsed_ms=round(result.elapsed_ms, 1),
+           body=result.body[:200])
+    return result.ok
+
+
 def main() -> int:
     status(log, "=" * 60)
     status(log, "SDP CLIENT AGENT STARTING")
     status(log, f"IDP: {settings.idp_base_url}")
     status(log, "=" * 60)
 
-    status(log, "[1/5] First-factor login against IDP...")
+    status(log, "[1/6] First-factor login against IDP...")
     username, password = _first_factor_login()
     device_id = _device_id(username)
 
@@ -130,26 +160,26 @@ def main() -> int:
 
     login_token = login_data["login_token"]
     device_enrolled = bool(login_data.get("device_enrolled"))
-    status(log, f"[1/5] First factor accepted", username=username, device_id=device_id,
+    status(log, f"[1/6] First factor accepted", username=username, device_id=device_id,
            device_enrolled=device_enrolled)
 
-    status(log, "[2/5] Selecting hardware trust anchor...")
+    status(log, "[2/6] Selecting hardware trust anchor...")
     try:
         anchor = select_trust_anchor(username)
     except TrustAnchorUnavailable as exc:
         status(log, "[FATAL] No hardware trust anchor available - refusing to connect", error=str(exc))
         return 1
-    status(log, f"[2/5] Trust anchor selected: {anchor.kind}",
+    status(log, f"[2/6] Trust anchor selected: {anchor.kind}",
            backend=anchor.backend, simulated=anchor.simulated)
 
     # Posture telemetry is collected locally for visibility only; it is NOT
     # sent to the IDP in this phase (telemetry design is deferred).
     try:
         posture = checker.collect(device_id, anchor.kind, trust_anchor_present=True)
-        status(log, "[2/5] Local posture snapshot (not transmitted)",
+        status(log, "[2/6] Local posture snapshot (not transmitted)",
                os=posture.os_name, anchor=posture.trust_anchor_type)
     except Exception as exc:  # posture must never block auth in this phase
-        status(log, "[2/5] Local posture snapshot failed (ignored)", error=str(exc))
+        status(log, "[2/6] Local posture snapshot failed (ignored)", error=str(exc))
 
     origin = f"https://{settings.rp_id}"
     # The cached credential is only usable by the trust anchor that enrolled
@@ -159,7 +189,7 @@ def main() -> int:
     cached_credential = credential_cache.load(username, anchor.backend)
     should_register = cached_credential is None or not device_enrolled
 
-    status(log, "[3/5] Running FIDO2 ceremony against IDP...",
+    status(log, "[3/6] Running FIDO2 ceremony against IDP...",
            mode="register" if should_register else "authenticate")
     try:
         if should_register:
@@ -186,10 +216,10 @@ def main() -> int:
     access_token = token_bundle["access_token"]
     refresh_token = token_bundle["refresh_token"]
 
-    status(log, "[4/5] IDP session established", hardware_attested=token_bundle.get("hardware_attested"),
+    status(log, "[4/6] IDP session established", hardware_attested=token_bundle.get("hardware_attested"),
            access_ttl_s=token_bundle.get("expires_in"))
 
-    status(log, "[5/5] SPA knock to Gateway...", gateway=f"{settings.gateway_ip}:{settings.gateway_spa_port_client}",
+    status(log, "[5/6] SPA knock to Gateway...", gateway=f"{settings.gateway_ip}:{settings.gateway_spa_port_client}",
            port=settings.client_access_port, protocol=settings.client_access_protocol)
     try:
         gateway_pubkey = token_flow.gateway_key_from_bundle(token_bundle)
@@ -202,8 +232,17 @@ def main() -> int:
     if not _knock(gateway_pubkey, first_ticket):
         status(log, "[FATAL] Gateway did not accept the SPA knock - refusing to continue")
         return 1
-    status(log, "[5/5] Gateway accepted the SPA knock")
+    status(log, "[5/6] Gateway accepted the SPA knock")
     knocked_token = access_token
+
+    status(log, "[6/6] Using the data path...",
+           gateway=f"{settings.gateway_ip}:{settings.client_access_port}",
+           ca=session.ca_cert_path(), resource=session.RESOURCE_PATH)
+    if _use_data_path(access_token):
+        status(log, "[6/6] Resource reached through the Gateway")
+    else:
+        status(log, "[6/6] Resource not reached - the session stays up and retries "
+                    "after the next accepted knock")
 
     refresher = TokenRefresher(refresh_token, int(token_bundle.get("expires_in", 900)))
     refresher.set_initial_access_token(access_token)
@@ -228,6 +267,10 @@ def main() -> int:
                 if ticket and _knock(gateway_pubkey, ticket):
                     knocked_token = tok
                     status(log, "Re-knocked Gateway with a fresh knock ticket")
+                    # The pinhole was just re-opened for the new token; use it,
+                    # so the refreshed token is proven end to end and not only
+                    # at the knock.
+                    _use_data_path(tok)
                 elif ticket:
                     status(log, "Re-knock not accepted - retrying next heartbeat")
             if refresher._stop.is_set():

@@ -110,6 +110,25 @@ class Settings:
     kem_alg: str = os.environ.get("KEM_ALG", "ML-KEM-768")
     kem_private_key_path: str = os.environ.get("KEM_PRIVATE_KEY_PATH", "./certs/gateway_kem_private.bin")
     kem_public_key_path: str = os.environ.get("KEM_PUBLIC_KEY_PATH", "./certs/gateway_kem_public.bin")
+    # The certificate the Gateway PRESENTS to clients on the TLS proxy port,
+    # from `admin_cli.py issue-proxy-cert`. Distinct from gateway_tls_cert_path
+    # above, which is the Gateway's client certificate for the IDP link.
+    # proxy.key decrypts every client's traffic: it is the most sensitive key
+    # on this host.
+    gateway_proxy_cert_path: str = os.environ.get("GATEWAY_PROXY_CERT_PATH", "./certs/pki/proxy.crt")
+    gateway_proxy_key_path: str = os.environ.get("GATEWAY_PROXY_KEY_PATH", "./certs/pki/proxy.key")
+
+    # --- Resource node ---
+    # Where the Gateway re-forwards a request after inspecting it, and where
+    # the node itself listens. The inner leg is plain HTTP by design: the
+    # Gateway has already terminated the client's TLS and data-plane-net is
+    # internal-only.
+    resource_host: str = os.environ.get("RESOURCE_HOST", "resource-node")
+    resource_port: int = int(os.environ.get("RESOURCE_PORT", "7443"))
+    # The node cannot reach the IDP, so it verifies tokens offline against
+    # this key rather than fetching the JWKS.
+    resource_jwt_public_key_path: str = os.environ.get(
+        "RESOURCE_JWT_PUBLIC_KEY_PATH", "./certs/idp_jwt_public.pem")
 
     # --- Client ---
     client_device_id: str = os.environ.get("CLIENT_DEVICE_ID", "")
@@ -128,6 +147,10 @@ class Settings:
     # The resource port the client's SPA knock asks the Gateway to open.
     client_access_port: int = int(os.environ.get("CLIENT_ACCESS_PORT", "443"))
     client_access_protocol: str = os.environ.get("CLIENT_ACCESS_PROTOCOL", "tcp")
+    # The client's ONLY trust anchor for the Gateway's proxy certificate.
+    # There is no fallback: a missing CA fails the data path rather than
+    # downgrading to an unverified connection.
+    client_ca_cert_path: str = os.environ.get("CLIENT_CA_CERT_PATH", "./certs/pki/ca.crt")
 
 
 settings = Settings()

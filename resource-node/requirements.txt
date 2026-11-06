@@ -1,0 +1,7 @@
+# The resource node is the most exposed component in the topology, so the
+# dependency surface is kept to what token validation actually needs. The
+# HTTP server itself is Python's standard library (http.server) on purpose —
+# no FastAPI, no uvicorn, nothing with a transitive tree behind it.
+pyjwt>=2.9,<3.0
+cryptography>=43
+python-dotenv>=1.0,<2.0
