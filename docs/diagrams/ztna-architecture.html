@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZTNA architecture — trust zones and the paved road</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--color-muted); margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
+      color: var(--color-ink); margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 960px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Secure paved road</p>
+    <h1>One route reaches the resource; everything else stops at the perimeter</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ztna-arch-title ztna-arch-desc">
+        <title id="ztna-arch-title">ZTNA architecture — trust zones and the paved road</title>
+        <desc id="ztna-arch-desc">An enrolled client authenticates to the identity provider and admits itself through the gateway with a post-quantum knock, while an unenrolled host is dropped at the perimeter; the controller that should score trust and revoke sessions is not yet connected to the gateway.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- ============ zones (drawn first) ============ -->
+
+        <rect x="30" y="76" width="200" height="434" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8" stroke-dasharray="6,4"/>
+        <rect x="42" y="80" width="78" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="46" y="89" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">UNTRUSTED</text>
+
+        <rect x="282" y="76" width="212" height="434" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="294" y="80" width="96" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="298" y="89" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">CONTROL PLANE</text>
+
+        <rect x="550" y="76" width="380" height="434" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="562" y="80" width="214" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="566" y="89" fill="#5a6580" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">PROTECTED ENCLAVE · DEFAULT DROP</text>
+
+        <!-- ============ connectors (before nodes) ============ -->
+
+        <!-- 1. Client -> IDP : FIDO2 -->
+        <line x1="206" y1="148" x2="308" y2="148" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="231" y="128" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="257" y="137" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">FIDO2</text>
+
+        <!-- 2. IDP -> Gateway : mTLS control link (key registration + JWKS) -->
+        <path d="M 466,140 H 632 Q 640,140 640,148 V 200" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="531" y="120" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="549" y="129" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">MTLS</text>
+
+        <!-- 3. Client -> Gateway : the SPA knock (HEADLINE, routed clear of the IDP) -->
+        <path d="M 206,164 H 240 Q 248,164 248,172 V 312 Q 248,320 256,320 H 612 Q 620,320 620,312 V 280" fill="none" stroke="#bf4520" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+        <rect x="401" y="300" width="58" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="430" y="309" fill="#bf4520" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SPA KNOCK</text>
+
+        <!-- 4. Gateway -> Resource : the one permitted route -->
+        <line x1="756" y1="240" x2="792" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="760" y="220" width="28" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="774" y="229" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">TCP</text>
+
+        <!-- 5. Unenrolled host : forbidden ingress, stopped at the boundary -->
+        <line x1="206" y1="460" x2="538" y2="460" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3"/>
+        <line x1="546" y1="446" x2="546" y2="474" stroke="#2d3142" stroke-width="3"/>
+        <rect x="310" y="440" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="348" y="449" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">NO KNOCK</text>
+        <rect x="558" y="454" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="558" y="463" fill="#2d3142" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.06em">DROPPED</text>
+
+        <!-- 6. Gateway -> Controller : evidence  (NOT BUILT) -->
+        <path d="M 700,280 V 372 Q 700,380 692,380 H 474" fill="none" stroke="#4f5d75" stroke-width="1.1" stroke-dasharray="2,3" marker-end="url(#arrow)"/>
+        <rect x="551" y="360" width="62" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="582" y="369" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">EVIDENCE</text>
+
+        <!-- 7. Controller -> Gateway : verdict and revoke  (NOT BUILT) -->
+        <path d="M 466,408 H 722 Q 730,408 730,400 V 288" fill="none" stroke="#4f5d75" stroke-width="1.1" stroke-dasharray="2,3" marker-end="url(#arrow)"/>
+        <rect x="560" y="416" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="598" y="425" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">VERDICT</text>
+
+        <!-- ============ nodes (drawn last) ============ -->
+
+        <!-- Enrolled client -->
+        <rect x="56" y="120" width="150" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="56" y="120" width="150" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+        <rect x="64" y="126" width="46" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="87" y="135" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">ENROLLED</text>
+        <text x="131" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SDP Client</text>
+        <text x="131" y="169" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">tpm anchor</text>
+
+        <!-- Unenrolled host -->
+        <rect x="56" y="432" width="150" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="56" y="432" width="150" height="56" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.45)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="64" y="438" width="42" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="85" y="447" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SCANNER</text>
+        <text x="131" y="468" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Unenrolled Host</text>
+        <text x="131" y="481" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">no ticket</text>
+
+        <!-- Identity Provider -->
+        <rect x="316" y="120" width="150" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="316" y="120" width="150" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+        <rect x="324" y="126" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="337" y="135" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">IDP</text>
+        <text x="391" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Identity Provider</text>
+        <text x="391" y="169" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">:9000 · jwks</text>
+
+        <!-- Controller (FOCAL — the unwired gap) -->
+        <rect x="316" y="360" width="150" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="316" y="360" width="150" height="56" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.6" stroke-dasharray="5,4"/>
+        <rect x="324" y="366" width="54" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.40)" stroke-width="0.8"/>
+        <text x="351" y="375" fill="#bf4520" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">NOT WIRED</text>
+        <text x="391" y="396" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SDP Controller</text>
+        <text x="391" y="409" fill="#bf4520" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">trust + policy</text>
+
+        <!-- Gateway -->
+        <rect x="600" y="200" width="156" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="600" y="200" width="156" height="80" rx="6" fill="#ececec" stroke="#2d3142" stroke-width="1.4"/>
+        <rect x="608" y="206" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="621" y="215" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">PEP</text>
+        <text x="678" y="238" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SDP Gateway</text>
+        <text x="678" y="252" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">nftables · leased</text>
+        <text x="678" y="266" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">pinholes</text>
+
+        <!-- Resource -->
+        <rect x="800" y="212" width="112" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="800" y="212" width="112" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+        <rect x="808" y="218" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="821" y="227" fill="rgba(45,49,66,0.8)" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">SVC</text>
+        <text x="856" y="248" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Resource</text>
+        <text x="856" y="261" fill="#4f5d75" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">ssh · http · iot</text>
+
+        <!-- ============ legend ============ -->
+        <line x1="30" y1="548" x2="930" y2="548" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="566" fill="#4f5d75" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
+
+        <line x1="108" y1="562" x2="136" y2="562" stroke="#bf4520" stroke-width="1.6" marker-end="url(#arrow-accent)"/>
+        <text x="144" y="566" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">PERMITTED INGRESS</text>
+
+        <line x1="296" y1="562" x2="324" y2="562" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3"/>
+        <line x1="326" y1="556" x2="326" y2="568" stroke="#2d3142" stroke-width="3"/>
+        <text x="338" y="566" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">BLOCKED AT PERIMETER</text>
+
+        <line x1="540" y1="562" x2="568" y2="562" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="576" y="566" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">MTLS CONTROL LINK</text>
+
+        <line x1="756" y1="562" x2="784" y2="562" stroke="#4f5d75" stroke-width="1.1" stroke-dasharray="2,3" marker-end="url(#arrow)"/>
+        <text x="792" y="566" fill="#5a6580" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">NOT BUILT YET</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
