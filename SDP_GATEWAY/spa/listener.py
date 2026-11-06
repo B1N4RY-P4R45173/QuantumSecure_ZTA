@@ -149,10 +149,23 @@ class SPAListener:
                    decision=decision.get("type"), reason=decision.get("reason"))
             return
 
-        segmentation.grant_temporary_access(
+        session = segmentation.grant_temporary_access(
             client_ip, decision["access_port"], decision["protocol"], decision["ttl_seconds"],
+            session_id=decision["session_id"],
+            sid=ticket.sid,
+            acl=decision.get("acl", segmentation.ACL_FULL),
+            allowed_hosts=decision.get("allowed_hosts"),
         )
-        status(log, "SPA knock accepted", client_ip=client_ip, session=decision["session_id"])
+        if session is None:
+            # The Controller approved, but its ACL permits no destination. Stay
+            # silent like every other refusal: the sender learns nothing either
+            # way, and a half-open grant is never left behind.
+            status(log, "SPA knock dropped - ACL granted no reachable destination",
+                   client_ip=client_ip, acl=decision.get("acl"))
+            return
+
+        status(log, "SPA knock accepted", client_ip=client_ip, session=decision["session_id"],
+               acl=session.acl, hosts=",".join(session.hosts) or "any")
         self._reply(addr, b"SPA_OK")
 
     def _verify_ticket(self, encoded) -> ticket_format.KnockTicket:

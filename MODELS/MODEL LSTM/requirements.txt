@@ -1,0 +1,4 @@
+# MODEL LSTM
+# PyTorch is NOT listed here on purpose: setup.ps1 installs the CUDA (GPU) build first, from
+# https://download.pytorch.org/whl/cu126 . A plain "pip install torch" on Windows gives the CPU-only build.
+-r ../common/requirements-base.txt

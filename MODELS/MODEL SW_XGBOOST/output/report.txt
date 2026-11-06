@@ -1,0 +1,28 @@
+model: SW_XGBOOST
+accuracy:   0.9767
+macro F1:   0.9521
+binary  ->  precision 0.9972  detection rate 0.9943  F1 0.9958  FPR 0.00208
+time to detect -> bursts detected 1.000, median attack flows before alert 0.0
+
+                precision    recall  f1-score   support
+
+        Benign     0.9957    0.9979    0.9968    179969
+           API     1.0000    0.9989    0.9994      9000
+    Bruteforce     0.9804    0.9102    0.9440      9000
+BufferOverflow     0.9948    0.9963    0.9956      9000
+   C2Beaconing     0.9926    0.9972    0.9949      9000
+          DDoS     0.9999    0.9986    0.9992      9000
+           DNS     1.0000    1.0000    1.0000      9000
+           DoS     0.6492    0.8211    0.7251      9000
+       Evasion     1.0000    0.9852    0.9926      9000
+  Exfiltration     0.9996    0.9990    0.9993      9000
+  Exploitation     0.9493    0.9726    0.9608      9000
+          MITM     0.9854    0.9999    0.9926      9000
+      PortScan     0.9986    0.9998    0.9992      9000
+     Slowloris     0.7568    0.5562    0.6412      9000
+        TLSSSL     0.9971    0.9936    0.9953      9000
+      WebBased     0.9962    0.9990    0.9976      9000
+
+      accuracy                         0.9767    314969
+     macro avg     0.9560    0.9516    0.9521    314969
+  weighted avg     0.9776    0.9767    0.9764    314969

@@ -1,0 +1,28 @@
+model: LIGHTGBM
+accuracy:   0.9345
+macro F1:   0.8729
+binary  ->  precision 0.9794  detection rate 0.9856  F1 0.9825  FPR 0.01557
+time to detect -> bursts detected 1.000, median attack flows before alert 0.0
+
+                precision    recall  f1-score   support
+
+        Benign     0.9892    0.9844    0.9868    179969
+           API     0.9999    0.9987    0.9993      9000
+    Bruteforce     0.9205    0.8238    0.8695      9000
+BufferOverflow     0.7563    0.7591    0.7577      9000
+   C2Beaconing     0.9881    0.9107    0.9478      9000
+          DDoS     0.9937    0.9999    0.9968      9000
+           DNS     1.0000    1.0000    1.0000      9000
+           DoS     0.4769    0.6750    0.5589      9000
+       Evasion     1.0000    0.9852    0.9926      9000
+  Exfiltration     0.9965    0.9989    0.9977      9000
+  Exploitation     0.5772    0.8436    0.6854      9000
+          MITM     0.9851    0.9990    0.9920      9000
+      PortScan     0.9999    0.8439    0.9153      9000
+     Slowloris     0.4441    0.2596    0.3276      9000
+        TLSSSL     0.9767    0.9659    0.9713      9000
+      WebBased     0.9803    0.9557    0.9678      9000
+
+      accuracy                         0.9345    314969
+     macro avg     0.8803    0.8752    0.8729    314969
+  weighted avg     0.9394    0.9345    0.9347    314969

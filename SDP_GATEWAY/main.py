@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from controller.allow_all import AllowAllController
 from firewall import rules as firewall_rules
+from firewall.sessions import TABLE as sessions
 from mtls import idp_link
 from pqc import kem
 from spa.listener import SPAListener
@@ -39,6 +40,11 @@ from shared.config.settings import settings
 from shared.utils.logger import get_logger, status
 
 log = get_logger("Gateway")
+
+# Service ports held dark until a knock opens them. Only enforced on the
+# nftables backend; the iptables chain already ends in a blanket DROP.
+PROTECTED_PORTS = [int(p) for p in
+                   os.environ.get("GATEWAY_PROTECTED_PORTS", "22,80,443").split(",") if p.strip()]
 
 
 def _check_idp_jwks(ctx) -> None:
@@ -69,7 +75,18 @@ if __name__ == "__main__":
     ctx = idp_link.ssl_context()
     idp_link.register_kem_key(kem_public_key, settings.gateway_spa_port, ctx)
     _check_idp_jwks(ctx)
+
+    # Say plainly whether packets are actually being filtered. In dry-run the
+    # whole SPA path still runs and the session table is still kept, so the
+    # flow can be exercised off-box; nothing reaches the kernel.
     firewall_rules.ensure_chain()
+    firewall_rules.protect_ports(PROTECTED_PORTS)
+    status(log, "Firewall backend", mode=firewall_rules.mode(),
+           enforcing=firewall_rules.mode() != firewall_rules.MODE_DRY_RUN,
+           protected_ports=PROTECTED_PORTS)
+
+    # One reaper for every lease, instead of a timer per grant.
+    sessions.start_reaper()
 
     # Stand-in until the real SDP Controller exists: approves every knock the
     # Gateway has verified. Swap it here; the listener does not change.
@@ -78,4 +95,13 @@ if __name__ == "__main__":
 
     listener = SPAListener(kem_private_key, idp_link.jwks_url(), controller, jwks_ssl_context=ctx)
     status(log, "SPA listener starting", port=settings.gateway_spa_port)
-    listener.serve_forever()
+    try:
+        listener.serve_forever()
+    except KeyboardInterrupt:
+        status(log, "Shutting down")
+    finally:
+        # Close every lease and remove the chain, so a restart does not strand
+        # accept rules in the kernel.
+        sessions.stop()
+        firewall_rules.teardown()
+        status(log, "Gateway stopped")

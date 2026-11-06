@@ -1,0 +1,328 @@
+{
+  "offset_hours": -3,
+  "offset_table": {
+    "-12": 0,
+    "-11": 1,
+    "-10": 9,
+    "-9": 14,
+    "-8": 27,
+    "-7": 23,
+    "-6": 28,
+    "-5": 36,
+    "-4": 4406,
+    "-3": 341187,
+    "-2": 1559,
+    "-1": 43,
+    "0": 29,
+    "1": 37,
+    "2": 31,
+    "3": 11,
+    "4": 7,
+    "5": 2,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0
+  },
+  "detectors": {
+    "SURICATA_ALL": {
+      "binary": {
+        "precision": 0.2198029638215084,
+        "recall_detection_rate": 0.7862589768268305,
+        "f1": 0.3435614577099138,
+        "false_positive_rate": 0.2122032638861524,
+        "tp": 10620,
+        "fp": 37696,
+        "fn": 2887,
+        "tn": 139945
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.2122032638861524,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.9838842126873332,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.3559677983899195,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.013303769401330377,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 1.0,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.676056338028169,
+        "median_attack_flows_before_alert": 0.0,
+        "p90_attack_flows_before_alert": 1.0
+      }
+    },
+    "SURICATA_THREATS": {
+      "binary": {
+        "precision": 0.03571428571428571,
+        "recall_detection_rate": 0.00037017842600133266,
+        "f1": 0.0007327617791455999,
+        "false_positive_rate": 0.0007599596939895632,
+        "tp": 5,
+        "fp": 135,
+        "fn": 13502,
+        "tn": 177506
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.0007599596939895632,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.0,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.0010500525026251313,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.0,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 0.3333333333333333,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.04225352112676056,
+        "median_attack_flows_before_alert": 0.0,
+        "p90_attack_flows_before_alert": 0.8
+      }
+    },
+    "XGB_RETRAINED": {
+      "binary": {
+        "precision": 0.9959128065395095,
+        "recall_detection_rate": 0.974161545865107,
+        "f1": 0.9849171001908754,
+        "false_positive_rate": 0.0003039838775958253,
+        "tp": 13158,
+        "fp": 54,
+        "fn": 349,
+        "tn": 177587
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.0003039838775958253,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.9892219256826114,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.9698984949247462,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.8259423503325942,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 0.8333333333333334,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.9295774647887324,
+        "median_attack_flows_before_alert": 0.0,
+        "p90_attack_flows_before_alert": 0.0
+      }
+    },
+    "SW_XGB_RETRAINED": {
+      "binary": {
+        "precision": 1.0,
+        "recall_detection_rate": 0.9780854371807212,
+        "f1": 0.9889213264465904,
+        "false_positive_rate": 0.0,
+        "tp": 13211,
+        "fp": 0,
+        "fn": 296,
+        "tn": 177641
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.0,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.9935331554095668,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.9817990899544977,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.7993348115299335,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 1.0,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.8732394366197183,
+        "median_attack_flows_before_alert": 0.0,
+        "p90_attack_flows_before_alert": 10.899999999999999
+      }
+    },
+    "XGB_TRUSTLAB": {
+      "binary": {
+        "precision": 0.2547412407585985,
+        "recall_detection_rate": 0.7040793662545347,
+        "f1": 0.3741222289974232,
+        "false_positive_rate": 0.1566192489346491,
+        "tp": 9510,
+        "fp": 27822,
+        "fn": 3997,
+        "tn": 149819
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.1566192489346491,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.7859782385547116,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.5691284564228212,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.2516629711751663,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 0.0,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.7464788732394366,
+        "median_attack_flows_before_alert": 0.0,
+        "p90_attack_flows_before_alert": 23.600000000000072
+      }
+    },
+    "SW_XGB_TRUSTLAB": {
+      "binary": {
+        "precision": 0.18212880065741102,
+        "recall_detection_rate": 0.31176427037832233,
+        "f1": 0.2299333842961669,
+        "false_positive_rate": 0.10645065046920474,
+        "tp": 4211,
+        "fp": 18910,
+        "fn": 9296,
+        "tn": 158731
+      },
+      "per_label": {
+        "BENIGN": {
+          "flagged_share": 0.10645065046920474,
+          "flows": 177641
+        },
+        "DoS Hulk": {
+          "flagged_share": 0.36101416546910287,
+          "flows": 9742
+        },
+        "DoS Slowhttptest": {
+          "flagged_share": 0.1792089604480224,
+          "flows": 2857
+        },
+        "DoS slowloris": {
+          "flagged_share": 0.2017738359201774,
+          "flows": 902
+        },
+        "Heartbleed": {
+          "flagged_share": 0.0,
+          "flows": 6
+        }
+      },
+      "time_to_detect": {
+        "bursts": 71,
+        "bursts_detected_share": 0.647887323943662,
+        "median_attack_flows_before_alert": 1.0,
+        "p90_attack_flows_before_alert": 29.0
+      }
+    }
+  },
+  "suricata_perf": {
+    "pcap": "Wednesday-workingHours.pcap",
+    "runmode": "single",
+    "suricata_version": "This is Suricata version 8.0.7 RELEASE",
+    "rules_file": "/var/lib/suricata/rules/suricata.rules",
+    "home_net": "[192.168.10.0/24]",
+    "packets": 13788878,
+    "bytes": 12960792765,
+    "alerts": 2309948,
+    "startup_s": 22.09113476984203,
+    "engine_s": 137.99653514381498,
+    "peak_ram_mb": 962.91796875,
+    "packets_per_s": 99921.91460191179,
+    "mbit_per_s": 751.3691703341817
+  },
+  "xgb_perf": {
+    "XGB_RETRAINED": {
+      "window_flows": 1,
+      "features_all_s": 0.034840879030525684,
+      "train_time_s": 22.189423894509673,
+      "predict_s": 4.203466565348208,
+      "latency_ms_single": 0.8664610795676708,
+      "train_device": "cuda",
+      "throughput_flows_per_s": 45370.120462761755,
+      "peak_ram_mb": 1497.97265625
+    },
+    "SW_XGB_RETRAINED": {
+      "window_flows": 32,
+      "features_all_s": 1.3353489600121975,
+      "train_time_s": 27.93049931526184,
+      "predict_s": 2.906000160612166,
+      "latency_ms_single": 0.6344001740217209,
+      "train_device": "cuda",
+      "throughput_flows_per_s": 58374.71981538208,
+      "peak_ram_mb": 2104.16796875
+    },
+    "XGB_TRUSTLAB": {
+      "window_flows": 1,
+      "features_all_s": 0.1031848844140768,
+      "predict_s": 4.238147518597543,
+      "missing_features": [],
+      "train_device": "TRUST Lab model",
+      "throughput_flows_per_s": 44800.77986638922,
+      "peak_ram_mb": 1840.234375
+    },
+    "SW_XGB_TRUSTLAB": {
+      "window_flows": 32,
+      "features_all_s": 1.227226160466671,
+      "predict_s": 8.868901222012937,
+      "missing_features": [],
+      "train_device": "TRUST Lab model",
+      "throughput_flows_per_s": 20759.889577455317,
+      "peak_ram_mb": 2376.85546875
+    }
+  },
+  "avg_packets_per_flow": 25.64141845703125
+}

@@ -1,0 +1,14 @@
+{
+  "epochs": 8,
+  "samples_per_epoch": 400000,
+  "batch": 512,
+  "hidden": 64,
+  "layers": 2,
+  "dropout": 0.2,
+  "lr": 0.002,
+  "patience": 2,
+  "window": null,
+  "threads": 0,
+  "device": "cuda",
+  "bench_device": "cpu"
+}

@@ -1,0 +1,186 @@
+{
+  "schedule": [
+    {
+      "label": "DoS GoldenEye",
+      "pair": "172.16.0.1|192.168.10.50",
+      "v3_flows": 10293,
+      "dropped_outliers": 0,
+      "start": 40200.0,
+      "end": 40800.0
+    },
+    {
+      "label": "DoS Hulk",
+      "pair": "172.16.0.1|192.168.10.50",
+      "v3_flows": 231073,
+      "dropped_outliers": 0,
+      "start": 38580.0,
+      "end": 40080.0
+    },
+    {
+      "label": "DoS Slowhttptest",
+      "pair": "172.16.0.1|192.168.10.50",
+      "v3_flows": 5499,
+      "dropped_outliers": 0,
+      "start": 36900.0,
+      "end": 38280.0
+    },
+    {
+      "label": "DoS slowloris",
+      "pair": "172.16.0.1|192.168.10.50",
+      "v3_flows": 5796,
+      "dropped_outliers": 6,
+      "start": 35280.0,
+      "end": 36720.0
+    },
+    {
+      "label": "Heartbleed",
+      "pair": "172.16.0.1|192.168.10.51",
+      "v3_flows": 11,
+      "dropped_outliers": 0,
+      "start": 54720.0,
+      "end": 55980.0
+    }
+  ],
+  "results": {
+    "test time blocks (same blocks as step 2)": {
+      "SW_XGB_TRUSTLAB": {
+        "detection_rate": 0.0005588376177550695,
+        "false_alarm_rate": 0.0014770213638066161,
+        "precision": 0.032407407407407406,
+        "f1": 0.001098728614032334,
+        "tp": 7,
+        "fn": 12519,
+        "fp": 209,
+        "tn": 141292
+      },
+      "SW_XGB_ROBUST": {
+        "detection_rate": 0.04957688008941402,
+        "false_alarm_rate": 0.058225736920587134,
+        "precision": 0.07009029345372461,
+        "f1": 0.05807537641447677,
+        "tp": 621,
+        "fn": 11905,
+        "fp": 8239,
+        "tn": 133262
+      },
+      "XGB_TRUSTLAB": {
+        "detection_rate": 0.0006386715631486508,
+        "false_alarm_rate": 0.0032649945936777834,
+        "precision": 0.01702127659574468,
+        "f1": 0.0012311480455524776,
+        "tp": 8,
+        "fn": 12518,
+        "fp": 462,
+        "tn": 141039
+      },
+      "SURICATA_THREATS": {
+        "detection_rate": 0.0001596678907871627,
+        "false_alarm_rate": 0.0008056480166217907,
+        "precision": 0.017241379310344827,
+        "f1": 0.00031640563202025,
+        "tp": 2,
+        "fn": 12524,
+        "fp": 114,
+        "tn": 141387
+      },
+      "SURICATA_ALL": {
+        "detection_rate": 0.6435414338176593,
+        "false_alarm_rate": 0.12677648921209037,
+        "precision": 0.31003846153846154,
+        "f1": 0.4184706432019935,
+        "tp": 8061,
+        "fn": 4465,
+        "fp": 17939,
+        "tn": 123562
+      }
+    },
+    "whole day": {
+      "SW_XGB_TRUSTLAB": {
+        "detection_rate": 0.0007217571505902552,
+        "false_alarm_rate": 0.0018484025536392203,
+        "precision": 0.16879795396419436,
+        "f1": 0.0014373683092955263,
+        "tp": 132,
+        "fn": 182755,
+        "fp": 650,
+        "tn": 351005
+      },
+      "SW_XGB_ROBUST": {
+        "detection_rate": 0.014976460874747795,
+        "false_alarm_rate": 0.06061907267065732,
+        "precision": 0.11385932823412039,
+        "f1": 0.026471057247647905,
+        "tp": 2739,
+        "fn": 180148,
+        "fp": 21317,
+        "tn": 330338
+      },
+      "XGB_TRUSTLAB": {
+        "detection_rate": 4.921071481297194e-05,
+        "false_alarm_rate": 0.003642774878787448,
+        "precision": 0.0069767441860465115,
+        "f1": 9.773207295156289e-05,
+        "tp": 9,
+        "fn": 182878,
+        "fp": 1281,
+        "tn": 350374
+      },
+      "SURICATA_THREATS": {
+        "detection_rate": 1.0935714402882654e-05,
+        "false_alarm_rate": 0.0007990786424194168,
+        "precision": 0.007067137809187279,
+        "f1": 2.1837637167658456e-05,
+        "tp": 2,
+        "fn": 182885,
+        "fp": 281,
+        "tn": 351374
+      },
+      "SURICATA_ALL": {
+        "detection_rate": 0.9115246026234779,
+        "false_alarm_rate": 0.12764214926561546,
+        "precision": 0.7878653257211993,
+        "f1": 0.845195815239848,
+        "tp": 166706,
+        "fn": 16181,
+        "fp": 44886,
+        "tn": 306769
+      }
+    }
+  },
+  "old_v3": {
+    "SW_XGB_TRUSTLAB": {
+      "detection_rate": 0.31176427037832233,
+      "false_alarm_rate": 0.10645065046920474,
+      "precision": 0.18212880065741102,
+      "f1": 0.2299333842961669,
+      "tp": 4211,
+      "fn": 9296,
+      "fp": 18910,
+      "tn": 158731
+    },
+    "XGB_TRUSTLAB": {
+      "detection_rate": 0.7040793662545347,
+      "false_alarm_rate": 0.1566192489346491,
+      "precision": 0.2547412407585985,
+      "f1": 0.3741222289974232,
+      "tp": 9510,
+      "fn": 3997,
+      "fp": 27822,
+      "tn": 149819
+    }
+  },
+  "missing_features": [],
+  "settings": {
+    "day": "Wednesday",
+    "flows": "/home/abhinav_iot/ZEROTRUST/QuantumSecure_ZTA/DataSet/wed_py/wed_py.csv",
+    "v3_csv": [
+      "/home/abhinav_iot/ZEROTRUST/QuantumSecure_ZTA/DataSet/Wednesday-workingHours.pcap_ISCX.csv"
+    ],
+    "pad": 60.0,
+    "min_share": 0.05,
+    "gap": 600.0,
+    "raw": false,
+    "tolerance": 1.0,
+    "no_suricata": false
+  }
+}

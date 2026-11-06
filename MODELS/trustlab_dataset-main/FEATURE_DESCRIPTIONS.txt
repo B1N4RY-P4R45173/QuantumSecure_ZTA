@@ -1,0 +1,652 @@
+TRUST Lab Dataset - Complete Feature Descriptions
+================================================
+
+This document provides detailed descriptions of all 84 features in the TRUST Lab Dataset.
+
+IDENTIFIERS AND METADATA (6 features)
+--------------------------------------
+
+1.  Src IP (Source IP Address)
+    - Type: String
+    - Description: Anonymized source IP address of the flow initiator
+    - Format: 192.168.X.X
+    - Note: Anonymized for privacy, but flow consistency is maintained
+
+2.  Dst IP (Destination IP Address)
+    - Type: String
+    - Description: Anonymized destination IP address of the flow responder
+    - Format: 192.168.X.X
+    - Note: Anonymized for privacy, but flow consistency is maintained
+
+3.  Src Port (Source Port)
+    - Type: Integer
+    - Description: Transport layer source port number
+    - Range: 0-65535
+    - Note: Ephemeral ports typically 49152-65535, well-known ports 0-1023
+
+4.  Dst Port (Destination Port)
+    - Type: Integer
+    - Description: Transport layer destination port number
+    - Range: 0-65535
+    - Note: Identifies the service (e.g., 80=HTTP, 443=HTTPS, 22=SSH)
+
+5.  Protocol
+    - Type: Integer
+    - Description: IP protocol number
+    - Common values: 6 (TCP), 17 (UDP), 1 (ICMP)
+    - Reference: IANA Protocol Numbers
+
+6.  Timestamp
+    - Type: String
+    - Description: Flow start timestamp
+    - Format: YYYY-MM-DD HH:MM:SS
+    - Timezone: UTC
+    - Note: Remove before training to prevent temporal overfitting
+
+
+FLOW DURATION AND TIMING (4 features)
+--------------------------------------
+
+7.  Flow Duration
+    - Type: Float
+    - Description: Total duration of the network flow from first to last packet
+    - Unit: Microseconds
+    - Range: ≥0
+    - Note: Short-lived flows may indicate scanning; very long flows may be data exfiltration
+
+8.  Flow IAT Mean (Inter-Arrival Time Mean)
+    - Type: Float
+    - Description: Average time between consecutive packets in the flow
+    - Unit: Microseconds
+    - Range: ≥0
+    - Significance: Regular IAT may indicate automated/bot traffic
+
+9.  Flow IAT Std (Inter-Arrival Time Standard Deviation)
+    - Type: Float
+    - Description: Standard deviation of inter-arrival times
+    - Unit: Microseconds
+    - Range: ≥0
+    - Significance: Low std indicates regular timing (potential C2 beaconing)
+
+10. Flow IAT Max (Inter-Arrival Time Maximum)
+    - Type: Float
+    - Description: Maximum time between any two consecutive packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+11. Flow IAT Min (Inter-Arrival Time Minimum)
+    - Type: Float
+    - Description: Minimum time between any two consecutive packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+
+PACKET COUNTS (6 features)
+---------------------------
+
+12. Total Fwd Packets
+    - Type: Integer
+    - Description: Total number of packets sent in forward direction (initiator → responder)
+    - Range: ≥0
+    - Significance: High count may indicate data upload/exfiltration
+
+13. Total Backward Packets
+    - Type: Integer
+    - Description: Total number of packets sent in backward direction (responder → initiator)
+    - Range: ≥0
+    - Significance: High count may indicate data download
+
+14. Total Length of Fwd Packets
+    - Type: Integer
+    - Description: Sum of all packet sizes in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+15. Total Length of Bwd Packets
+    - Type: Integer
+    - Description: Sum of all packet sizes in backward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+16. Fwd Packets/s
+    - Type: Float
+    - Description: Rate of forward packets per second
+    - Unit: Packets per second
+    - Range: ≥0
+    - Significance: Very high rate may indicate flooding attacks
+
+17. Bwd Packets/s
+    - Type: Float
+    - Description: Rate of backward packets per second
+    - Unit: Packets per second
+    - Range: ≥0
+
+
+PACKET LENGTH STATISTICS - FORWARD DIRECTION (4 features)
+----------------------------------------------------------
+
+18. Fwd Packet Length Max
+    - Type: Float
+    - Description: Maximum packet size in forward direction
+    - Unit: Bytes
+    - Range: 0-65535 (theoretical max for IPv4)
+    - Note: Large packets (>1500) may be fragmented or jumbo frames
+
+19. Fwd Packet Length Min
+    - Type: Float
+    - Description: Minimum packet size in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+    - Note: Minimum TCP packet is typically 40 bytes (20 IP + 20 TCP header)
+
+20. Fwd Packet Length Mean
+    - Type: Float
+    - Description: Average packet size in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+    - Significance: Small mean (~40-60) may indicate control traffic or SYN floods
+
+21. Fwd Packet Length Std
+    - Type: Float
+    - Description: Standard deviation of forward packet sizes
+    - Unit: Bytes
+    - Range: ≥0
+    - Significance: High std indicates variable data transfer; low std indicates uniform packets
+
+
+PACKET LENGTH STATISTICS - BACKWARD DIRECTION (4 features)
+-----------------------------------------------------------
+
+22. Bwd Packet Length Max
+    - Type: Float
+    - Description: Maximum packet size in backward direction
+    - Unit: Bytes
+    - Range: 0-65535
+
+23. Bwd Packet Length Min
+    - Type: Float
+    - Description: Minimum packet size in backward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+24. Bwd Packet Length Mean
+    - Type: Float
+    - Description: Average packet size in backward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+25. Bwd Packet Length Std
+    - Type: Float
+    - Description: Standard deviation of backward packet sizes
+    - Unit: Bytes
+    - Range: ≥0
+
+
+FLOW BYTES AND PACKETS (4 features)
+------------------------------------
+
+26. Flow Bytes/s
+    - Type: Float
+    - Description: Rate of bytes transferred per second (both directions)
+    - Unit: Bytes per second
+    - Range: ≥0
+    - Significance: Very high values indicate high-bandwidth usage (DDoS, exfiltration)
+
+27. Flow Packets/s
+    - Type: Float
+    - Description: Rate of packets per second (both directions)
+    - Unit: Packets per second
+    - Range: ≥0
+    - Significance: Extremely high PPS indicates flooding attacks
+
+28. Packet Length Mean
+    - Type: Float
+    - Description: Average packet size across entire flow (both directions)
+    - Unit: Bytes
+    - Range: ≥0
+
+29. Packet Length Std
+    - Type: Float
+    - Description: Standard deviation of packet sizes across entire flow
+    - Unit: Bytes
+    - Range: ≥0
+
+
+PACKET LENGTH STATISTICS - OVERALL (3 features)
+------------------------------------------------
+
+30. Packet Length Variance
+    - Type: Float
+    - Description: Variance of packet sizes
+    - Unit: Bytes²
+    - Range: ≥0
+    - Note: Variance = (Standard Deviation)²
+
+31. Packet Length Max
+    - Type: Float
+    - Description: Maximum packet size in entire flow
+    - Unit: Bytes
+    - Range: 0-65535
+
+32. Packet Length Min
+    - Type: Float
+    - Description: Minimum packet size in entire flow
+    - Unit: Bytes
+    - Range: ≥0
+
+
+TCP FLAGS (6 features)
+----------------------
+
+33. FIN Flag Count
+    - Type: Integer
+    - Description: Number of packets with FIN (Finish) flag set
+    - Range: ≥0
+    - Significance: Multiple FIN flags may indicate abnormal connection termination
+
+34. SYN Flag Count
+    - Type: Integer
+    - Description: Number of packets with SYN (Synchronize) flag set
+    - Range: ≥0
+    - Significance: High SYN count without established connection indicates SYN flood attack
+
+35. RST Flag Count
+    - Type: Integer
+    - Description: Number of packets with RST (Reset) flag set
+    - Range: ≥0
+    - Significance: High RST count indicates connection failures or scanning activity
+
+36. PSH Flag Count
+    - Type: Integer
+    - Description: Number of packets with PSH (Push) flag set
+    - Range: ≥0
+    - Significance: Indicates data push without waiting for buffer to fill
+
+37. ACK Flag Count
+    - Type: Integer
+    - Description: Number of packets with ACK (Acknowledgment) flag set
+    - Range: ≥0
+    - Note: Most TCP packets in established connections have ACK flag set
+
+38. URG Flag Count
+    - Type: Integer
+    - Description: Number of packets with URG (Urgent) flag set
+    - Range: ≥0
+    - Note: Rarely used in modern networks; may indicate evasion techniques
+
+39. CWE Flag Count
+    - Type: Integer
+    - Description: Number of packets with CWE (Congestion Window Reduced) flag set
+    - Range: ≥0
+    - Note: Part of ECN (Explicit Congestion Notification)
+
+40. ECE Flag Count
+    - Type: Integer
+    - Description: Number of packets with ECE (ECN-Echo) flag set
+    - Range: ≥0
+    - Note: Part of ECN (Explicit Congestion Notification)
+
+
+DOWN/UP RATIO (1 feature)
+--------------------------
+
+41. Down/Up Ratio
+    - Type: Float
+    - Description: Ratio of download (backward) packets to upload (forward) packets
+    - Formula: Total Bwd Packets / Total Fwd Packets
+    - Range: ≥0
+    - Significance: High ratio (>10) may indicate data download; low ratio (<0.1) may indicate upload/exfiltration
+
+
+AVERAGE AND VARIANCE (4 features)
+----------------------------------
+
+42. Average Packet Size
+    - Type: Float
+    - Description: Mean packet size across entire flow
+    - Unit: Bytes
+    - Range: ≥0
+
+43. Avg Fwd Segment Size
+    - Type: Float
+    - Description: Average size of forward TCP segments (payload only)
+    - Unit: Bytes
+    - Range: ≥0
+
+44. Avg Bwd Segment Size
+    - Type: Float
+    - Description: Average size of backward TCP segments (payload only)
+    - Unit: Bytes
+    - Range: ≥0
+
+45. Fwd Header Length
+    - Type: Integer
+    - Description: Total bytes used for headers in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+
+FORWARD IAT STATISTICS (4 features)
+------------------------------------
+
+46. Fwd IAT Total
+    - Type: Float
+    - Description: Total inter-arrival time for forward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+47. Fwd IAT Mean
+    - Type: Float
+    - Description: Mean inter-arrival time between forward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+48. Fwd IAT Std
+    - Type: Float
+    - Description: Standard deviation of forward inter-arrival times
+    - Unit: Microseconds
+    - Range: ≥0
+
+49. Fwd IAT Max
+    - Type: Float
+    - Description: Maximum inter-arrival time between forward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+50. Fwd IAT Min
+    - Type: Float
+    - Description: Minimum inter-arrival time between forward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+
+BACKWARD IAT STATISTICS (5 features)
+-------------------------------------
+
+51. Bwd IAT Total
+    - Type: Float
+    - Description: Total inter-arrival time for backward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+52. Bwd IAT Mean
+    - Type: Float
+    - Description: Mean inter-arrival time between backward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+53. Bwd IAT Std
+    - Type: Float
+    - Description: Standard deviation of backward inter-arrival times
+    - Unit: Microseconds
+    - Range: ≥0
+
+54. Bwd IAT Max
+    - Type: Float
+    - Description: Maximum inter-arrival time between backward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+55. Bwd IAT Min
+    - Type: Float
+    - Description: Minimum inter-arrival time between backward packets
+    - Unit: Microseconds
+    - Range: ≥0
+
+
+FORWARD PSH AND URG FLAGS (2 features)
+---------------------------------------
+
+56. Fwd PSH Flags
+    - Type: Integer
+    - Description: Number of forward packets with PSH flag set
+    - Range: ≥0
+
+57. Fwd URG Flags
+    - Type: Integer
+    - Description: Number of forward packets with URG flag set
+    - Range: ≥0
+
+
+BACKWARD PSH AND URG FLAGS (2 features)
+----------------------------------------
+
+58. Bwd PSH Flags
+    - Type: Integer
+    - Description: Number of backward packets with PSH flag set
+    - Range: ≥0
+
+59. Bwd URG Flags
+    - Type: Integer
+    - Description: Number of backward packets with URG flag set
+    - Range: ≥0
+
+
+HEADER LENGTH (2 features)
+---------------------------
+
+60. Fwd Header Length
+    - Type: Integer
+    - Description: Total length of headers in forward packets
+    - Unit: Bytes
+    - Range: ≥0
+
+61. Bwd Header Length
+    - Type: Integer
+    - Description: Total length of headers in backward packets
+    - Unit: Bytes
+    - Range: ≥0
+
+
+PACKETS PER SECOND (2 features)
+--------------------------------
+
+62. Fwd Packets/s
+    - Type: Float
+    - Description: Forward packet rate per second
+    - Unit: Packets/second
+    - Range: ≥0
+
+63. Bwd Packets/s
+    - Type: Float
+    - Description: Backward packet rate per second
+    - Unit: Packets/second
+    - Range: ≥0
+
+
+MINIMUM SEGMENT SIZE (2 features)
+----------------------------------
+
+64. Min Seg Size Forward
+    - Type: Integer
+    - Description: Minimum TCP segment size observed in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+65. Min Seg Size Backward (hypothetical if exists)
+    - Type: Integer
+    - Description: Minimum TCP segment size observed in backward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+
+ACTIVE AND IDLE TIME STATISTICS (8 features)
+---------------------------------------------
+
+66. Active Mean
+    - Type: Float
+    - Description: Mean time a flow was active before becoming idle
+    - Unit: Microseconds
+    - Range: ≥0
+    - Significance: Short active periods may indicate reconnaissance
+
+67. Active Std
+    - Type: Float
+    - Description: Standard deviation of active times
+    - Unit: Microseconds
+    - Range: ≥0
+
+68. Active Max
+    - Type: Float
+    - Description: Maximum active time period
+    - Unit: Microseconds
+    - Range: ≥0
+
+69. Active Min
+    - Type: Float
+    - Description: Minimum active time period
+    - Unit: Microseconds
+    - Range: ≥0
+
+70. Idle Mean
+    - Type: Float
+    - Description: Mean time a flow was idle before becoming active
+    - Unit: Microseconds
+    - Range: ≥0
+    - Significance: Regular idle intervals may indicate C2 beaconing
+
+71. Idle Std
+    - Type: Float
+    - Description: Standard deviation of idle times
+    - Unit: Microseconds
+    - Range: ≥0
+
+72. Idle Max
+    - Type: Float
+    - Description: Maximum idle time period
+    - Unit: Microseconds
+    - Range: ≥0
+
+73. Idle Min
+    - Type: Float
+    - Description: Minimum idle time period
+    - Unit: Microseconds
+    - Range: ≥0
+
+
+ADDITIONAL DERIVED FEATURES (10-11 features, depending on CICFlowmeter version)
+--------------------------------------------------------------------------------
+
+74. Subflow Fwd Packets
+    - Type: Integer
+    - Description: Average number of packets in forward subflows
+    - Range: ≥0
+
+75. Subflow Fwd Bytes
+    - Type: Integer
+    - Description: Average number of bytes in forward subflows
+    - Unit: Bytes
+    - Range: ≥0
+
+76. Subflow Bwd Packets
+    - Type: Integer
+    - Description: Average number of packets in backward subflows
+    - Range: ≥0
+
+77. Subflow Bwd Bytes
+    - Type: Integer
+    - Description: Average number of bytes in backward subflows
+    - Unit: Bytes
+    - Range: ≥0
+
+78. Init_Win_bytes_forward
+    - Type: Integer
+    - Description: Initial TCP window size in forward direction
+    - Unit: Bytes
+    - Range: 0-65535
+    - Significance: Abnormal window sizes may indicate OS fingerprinting or attacks
+
+79. Init_Win_bytes_backward
+    - Type: Integer
+    - Description: Initial TCP window size in backward direction
+    - Unit: Bytes
+    - Range: 0-65535
+
+80. act_data_pkt_fwd
+    - Type: Integer
+    - Description: Count of packets with at least 1 byte of TCP payload in forward direction
+    - Range: ≥0
+
+81. min_seg_size_forward
+    - Type: Integer
+    - Description: Minimum segment size observed in forward direction
+    - Unit: Bytes
+    - Range: ≥0
+
+82. Flow IAT Total (hypothetical duplicate or variant)
+    - Type: Float
+    - Description: Total inter-arrival time for entire flow
+    - Unit: Microseconds
+    - Range: ≥0
+
+
+LABEL (1 feature - TARGET VARIABLE)
+------------------------------------
+
+83. Label
+    - Type: String (Categorical)
+    - Description: Classification label for the network flow
+    - Values:
+      * "Benign" - Normal, legitimate traffic
+      * "Bruteforce" - Credential guessing attacks (SSH, FTP, HTTP)
+      * "DoS" - Denial of Service attacks
+      * "DDoS" - Distributed Denial of Service attacks
+      * "PortScan" - Network reconnaissance and port scanning
+      * "WebBased" - Web application attacks (SQLi, XSS, Command Injection)
+      * "Exploitation" - Exploiting service vulnerabilities
+      * "C2Beaconing" - Command and Control communication
+      * "Exfiltration" - Data theft and exfiltration
+      * "MITM" - Man-in-the-Middle attacks
+      * "API" - API abuse and attacks
+      * "DNS" - DNS tunneling and attacks
+      * "TLSSSL" - TLS/SSL protocol attacks
+      * "BufferOverflow" - Memory corruption attacks
+      * "Evasion" - IDS evasion techniques
+      * "Slowloris" - Slow HTTP attacks
+    - Note: This is the TARGET VARIABLE for supervised machine learning
+
+
+FEATURE ENGINEERING RECOMMENDATIONS
+------------------------------------
+
+**High Importance Features (based on cybersecurity domain knowledge):**
+1.  Flow Duration
+2.  Flow Bytes/s
+3.  Flow Packets/s
+4.  Fwd Packet Length Mean
+5.  Bwd Packet Length Mean
+6.  Flow IAT Mean
+7.  SYN Flag Count
+8.  RST Flag Count
+9.  Packet Length Std
+10. Down/Up Ratio
+
+**Features to Remove Before Training:**
+- Src IP (to prevent overfitting on network topology)
+- Dst IP (to prevent overfitting on network topology)
+- Timestamp (to prevent temporal overfitting)
+- Src Port (may be informative but often ephemeral)
+- Dst Port (consider keeping as it identifies services)
+
+**Highly Correlated Features (consider removing one from each pair):**
+- Total Length of Fwd Packets ↔ Total Fwd Packets (correlation ~0.95)
+- Packet Length Mean ↔ Average Packet Size (likely identical)
+- Flow IAT Mean ↔ Flow Duration / Total Packets (derived relationship)
+
+**Feature Scaling:**
+- Apply StandardScaler or MinMaxScaler before training
+- Features have vastly different scales (e.g., flag counts 0-10 vs. flow duration 0-10^9 microseconds)
+
+
+ADDITIONAL NOTES
+----------------
+
+- Some features may be missing or zero for unidirectional flows (e.g., UDP)
+- Features with all zeros or near-zero variance should be removed during preprocessing
+- For ensemble models (Random Forest, XGBoost), feature scaling is optional but recommended for consistency
+- For neural networks, feature scaling is mandatory
+
+---
+
+Created by TRUST Lab - Universidad Politécnica de Cartagena (UPCT)
+For questions or clarifications, contact: antonio.villafranca@upct.es

@@ -1,0 +1,40 @@
+{
+  "XGB_RETRAINED": {
+    "window_flows": 1,
+    "features_all_s": 0.034840879030525684,
+    "train_time_s": 22.189423894509673,
+    "predict_s": 4.203466565348208,
+    "latency_ms_single": 0.8664610795676708,
+    "train_device": "cuda",
+    "throughput_flows_per_s": 45370.120462761755,
+    "peak_ram_mb": 1497.97265625
+  },
+  "SW_XGB_RETRAINED": {
+    "window_flows": 32,
+    "features_all_s": 1.3353489600121975,
+    "train_time_s": 27.93049931526184,
+    "predict_s": 2.906000160612166,
+    "latency_ms_single": 0.6344001740217209,
+    "train_device": "cuda",
+    "throughput_flows_per_s": 58374.71981538208,
+    "peak_ram_mb": 2104.16796875
+  },
+  "XGB_TRUSTLAB": {
+    "window_flows": 1,
+    "features_all_s": 0.1031848844140768,
+    "predict_s": 4.238147518597543,
+    "missing_features": [],
+    "train_device": "TRUST Lab model",
+    "throughput_flows_per_s": 44800.77986638922,
+    "peak_ram_mb": 1840.234375
+  },
+  "SW_XGB_TRUSTLAB": {
+    "window_flows": 32,
+    "features_all_s": 1.227226160466671,
+    "predict_s": 8.868901222012937,
+    "missing_features": [],
+    "train_device": "TRUST Lab model",
+    "throughput_flows_per_s": 20759.889577455317,
+    "peak_ram_mb": 2376.85546875
+  }
+}

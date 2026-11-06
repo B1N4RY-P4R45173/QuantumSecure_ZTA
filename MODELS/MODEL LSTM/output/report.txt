@@ -1,0 +1,28 @@
+model: LSTM
+accuracy:   0.9746
+macro F1:   0.9578
+binary  ->  precision 0.9805  detection rate 0.9897  F1 0.9851  FPR 0.01477
+time to detect -> bursts detected 1.000, median attack flows before alert 0.0
+
+                precision    recall  f1-score   support
+
+        Benign     0.9922    0.9852    0.9887    179969
+           API     0.9397    0.9271    0.9334      9000
+    Bruteforce     0.9458    0.8777    0.9104      9000
+BufferOverflow     0.9915    0.9970    0.9942      9000
+   C2Beaconing     0.9402    0.9950    0.9668      9000
+          DDoS     0.9940    0.7940    0.8828      9000
+           DNS     0.9972    0.9998    0.9985      9000
+           DoS     0.9463    0.9286    0.9374      9000
+       Evasion     0.9998    0.9867    0.9932      9000
+  Exfiltration     0.9934    0.9991    0.9962      9000
+  Exploitation     0.9479    0.9723    0.9600      9000
+          MITM     0.9846    0.9999    0.9922      9000
+      PortScan     0.8271    0.9974    0.9043      9000
+     Slowloris     0.9302    0.9590    0.9444      9000
+        TLSSSL     0.9039    0.9744    0.9379      9000
+      WebBased     0.9694    0.9991    0.9840      9000
+
+      accuracy                         0.9746    314969
+     macro avg     0.9564    0.9620    0.9578    314969
+  weighted avg     0.9759    0.9746    0.9746    314969

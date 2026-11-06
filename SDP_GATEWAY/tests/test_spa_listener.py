@@ -55,9 +55,24 @@ class RecordingController:
 
 @pytest.fixture
 def gateway(kem_keys, ticket_key, monkeypatch):
-    grants, replies = [], []
-    monkeypatch.setattr(segmentation, "grant_temporary_access",
-                        lambda *args: grants.append(args))
+    grants, grant_kwargs, replies = [], [], []
+
+    def _grant(*args, **kwargs):
+        """Stand in for the real grant, recording how it was called.
+
+        Returns a Session-like object because the listener now refuses the
+        knock when a grant yields nothing — that is how acl=DENY and an empty
+        LIMITED allow-list are enforced.
+        """
+        grants.append(args)
+        grant_kwargs.append(kwargs)
+        acl = kwargs.get("acl", segmentation.ACL_FULL)
+        hosts = tuple(kwargs.get("allowed_hosts") or ())
+        if acl == segmentation.ACL_DENY or (acl == segmentation.ACL_LIMITED and not hosts):
+            return None
+        return types.SimpleNamespace(acl=acl, hosts=() if acl == segmentation.ACL_FULL else hosts)
+
+    monkeypatch.setattr(segmentation, "grant_temporary_access", _grant)
     # The IDP's JWKS: the RS256 JWT key, which must be ignored, and the ticket key.
     jwks = [types.SimpleNamespace(algorithm_name="RS256",
                                   key=rsa.generate_private_key(65537, 2048).public_key()),
@@ -69,7 +84,8 @@ def gateway(kem_keys, ticket_key, monkeypatch):
         listener._jwks_client = types.SimpleNamespace(get_signing_keys=lambda: jwks)
         listener._reply = lambda addr, msg: replies.append((addr, msg))
         return types.SimpleNamespace(listener=listener, controller=controller,
-                                     grants=grants, replies=replies)
+                                     grants=grants, grant_kwargs=grant_kwargs,
+                                     replies=replies)
     return build
 
 
@@ -103,6 +119,59 @@ def test_verified_knock_is_forwarded_and_opens_the_port(gateway, kem_keys, ticke
     assert "ticket" not in msg                    # raw ticket stays at the Gateway
     assert gw.grants == [(CLIENT[0], 443, "tcp", 30)]
     assert gw.replies == [(CLIENT, b"SPA_OK")]
+
+
+def test_full_acl_reaches_every_destination(gateway, kem_keys, ticket_key):
+    gw = gateway()
+    gw.listener._handle_packet(make_knock(kem_keys, make_ticket(ticket_key)), CLIENT)
+
+    [kwargs] = gw.grant_kwargs
+    assert kwargs["acl"] == "FULL"
+    assert kwargs["sid"] == SID                   # the grant is tied to the IDP session
+    assert gw.replies == [(CLIENT, b"SPA_OK")]
+
+
+def test_limited_acl_is_pinned_to_the_named_hosts(gateway, kem_keys, ticket_key):
+    """LIMITED must reach only the destinations the Controller named."""
+    hosts = ["10.0.0.5", "10.0.0.6"]
+    controller = RecordingController(reply={
+        "type": "APPROVED", "session_id": "s-1", "access_port": 443,
+        "protocol": "tcp", "ttl_seconds": 30, "acl": "LIMITED", "allowed_hosts": hosts,
+    })
+    gw = gateway(controller)
+    gw.listener._handle_packet(make_knock(kem_keys, make_ticket(ticket_key)), CLIENT)
+
+    [kwargs] = gw.grant_kwargs
+    assert kwargs["acl"] == "LIMITED"
+    assert kwargs["allowed_hosts"] == hosts
+    assert gw.replies == [(CLIENT, b"SPA_OK")]
+
+
+def test_limited_acl_naming_no_hosts_grants_nothing(gateway, kem_keys, ticket_key):
+    """An empty allow-list means no destinations, never unrestricted access.
+
+    A Controller that omits the field must not accidentally widen reach, and
+    the refusal stays silent like every other one.
+    """
+    controller = RecordingController(reply={
+        "type": "APPROVED", "session_id": "s-2", "access_port": 443,
+        "protocol": "tcp", "ttl_seconds": 30, "acl": "LIMITED", "allowed_hosts": [],
+    })
+    gw = gateway(controller)
+    gw.listener._handle_packet(make_knock(kem_keys, make_ticket(ticket_key)), CLIENT)
+
+    assert gw.replies == []                       # dropped in silence
+
+
+def test_deny_acl_opens_nothing(gateway, kem_keys, ticket_key):
+    controller = RecordingController(reply={
+        "type": "APPROVED", "session_id": "s-3", "access_port": 443,
+        "protocol": "tcp", "ttl_seconds": 30, "acl": "DENY", "allowed_hosts": [],
+    })
+    gw = gateway(controller)
+    gw.listener._handle_packet(make_knock(kem_keys, make_ticket(ticket_key)), CLIENT)
+
+    assert gw.replies == []
 
 
 def test_replayed_knock_is_dropped(gateway, kem_keys, ticket_key):

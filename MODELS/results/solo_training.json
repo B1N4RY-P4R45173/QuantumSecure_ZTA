@@ -1,0 +1,250 @@
+{
+  "settings": {
+    "solo_share": 0.1,
+    "other_share": 0.03,
+    "solo_gap": 32,
+    "test_solo_share": 0.08,
+    "no_deviation": false,
+    "trees": 400,
+    "lr": 0.1,
+    "threads": -1,
+    "device": "auto",
+    "gpu_id": 0,
+    "gpu_platform": 0
+  },
+  "solo_type_classes": [
+    "Exploitation",
+    "BufferOverflow",
+    "WebBased",
+    "API",
+    "TLSSSL",
+    "C2Beaconing",
+    "Exfiltration"
+  ],
+  "train": {
+    "SW_SOLO": {
+      "train_time_s": 151.79744016751647,
+      "train_peak_ram_mb": 4072.8671875,
+      "best_iteration": 164,
+      "n_features": 128
+    },
+    "SW_SOLO_DEV": {
+      "train_time_s": 170.0768248224631,
+      "train_peak_ram_mb": 4387.90234375,
+      "best_iteration": 168,
+      "n_features": 141
+    }
+  },
+  "tests": {
+    "TEST_ORIGINAL": {
+      "FLAT": {
+        "binary": {
+          "precision": 0.9797596457938014,
+          "recall_detection_rate": 0.9867703703703704,
+          "f1": 0.9832525113851922,
+          "false_positive_rate": 0.01529152242886275,
+          "tp": 133214,
+          "fp": 2752,
+          "fn": 1786,
+          "tn": 177217
+        },
+        "macro_f1": 0.8789304199217798,
+        "hidden_detection": 0.9968553459119497,
+        "solo_unit_detection": null,
+        "start_detection": 0.9985401459854014,
+        "spillover_false_alarm": 0.017431002282631253,
+        "quiet_hidden": {
+          "Exploitation": 1.0,
+          "BufferOverflow": 1.0,
+          "Bruteforce": 0.9841269841269841,
+          "C2Beaconing": 1.0
+        },
+        "predict_flows_per_s": 1561773.4768126884
+      },
+      "SW_OLD": {
+        "binary": {
+          "precision": 0.9975766946412244,
+          "recall_detection_rate": 0.9940814814814815,
+          "f1": 0.9958260211407391,
+          "false_positive_rate": 0.0018114230784190611,
+          "tp": 134201,
+          "fp": 326,
+          "fn": 799,
+          "tn": 179643
+        },
+        "macro_f1": 0.9515870668954862,
+        "hidden_detection": 0.9192872117400419,
+        "solo_unit_detection": null,
+        "start_detection": 0.9007299270072993,
+        "spillover_false_alarm": 0.010098914020889534,
+        "quiet_hidden": {
+          "Exploitation": 0.5238095238095238,
+          "BufferOverflow": 0.7142857142857143,
+          "Bruteforce": 0.8571428571428571,
+          "C2Beaconing": 0.875
+        },
+        "predict_flows_per_s": 850753.504096839
+      },
+      "SW_SOLO": {
+        "binary": {
+          "precision": 0.9968019588929287,
+          "recall_detection_rate": 0.9951037037037037,
+          "f1": 0.9959521073507062,
+          "false_positive_rate": 0.0023948568920202926,
+          "tp": 134339,
+          "fp": 431,
+          "fn": 661,
+          "tn": 179538
+        },
+        "macro_f1": 0.942329604768419,
+        "hidden_detection": 0.9654088050314465,
+        "solo_unit_detection": null,
+        "start_detection": 0.9547445255474453,
+        "spillover_false_alarm": 0.010721449816697794,
+        "quiet_hidden": {
+          "Exploitation": 0.7976190476190477,
+          "BufferOverflow": 0.8285714285714286,
+          "Bruteforce": 0.9523809523809523,
+          "C2Beaconing": 0.9821428571428571
+        },
+        "predict_flows_per_s": 663534.295858587
+      },
+      "SW_SOLO_DEV": {
+        "binary": {
+          "precision": 0.9972681449367887,
+          "recall_detection_rate": 0.9951037037037037,
+          "f1": 0.9961847486346295,
+          "false_positive_rate": 0.0020447966038595537,
+          "tp": 134339,
+          "fp": 368,
+          "fn": 661,
+          "tn": 179601
+        },
+        "macro_f1": 0.9433952519333341,
+        "hidden_detection": 0.9633123689727463,
+        "solo_unit_detection": null,
+        "start_detection": 0.9532846715328467,
+        "spillover_false_alarm": 0.009683890157017361,
+        "quiet_hidden": {
+          "Exploitation": 0.8095238095238095,
+          "BufferOverflow": 0.8142857142857143,
+          "Bruteforce": 0.9206349206349206,
+          "C2Beaconing": 0.9821428571428571
+        },
+        "predict_flows_per_s": 782008.0057610959
+      },
+      "_counts": {
+        "flows": 314969,
+        "hidden": 954,
+        "solo_units": 0,
+        "start": 685,
+        "busy_normal": 14457
+      }
+    },
+    "TEST_SOLO": {
+      "FLAT": {
+        "binary": {
+          "precision": 0.9797596457938014,
+          "recall_detection_rate": 0.9867703703703704,
+          "f1": 0.9832525113851922,
+          "false_positive_rate": 0.01529152242886275,
+          "tp": 133214,
+          "fp": 2752,
+          "fn": 1786,
+          "tn": 177217
+        },
+        "macro_f1": 0.8789304199217798,
+        "hidden_detection": 0.9964861158724717,
+        "solo_unit_detection": 0.9971296296296296,
+        "start_detection": 0.9967600700525394,
+        "spillover_false_alarm": 0.014130855594270228,
+        "quiet_hidden": {
+          "Exploitation": 1.0,
+          "BufferOverflow": 1.0,
+          "Bruteforce": 0.9616858237547893,
+          "C2Beaconing": 1.0
+        },
+        "predict_flows_per_s": 1413256.1530758978
+      },
+      "SW_OLD": {
+        "binary": {
+          "precision": 0.9975873643829047,
+          "recall_detection_rate": 0.986237037037037,
+          "f1": 0.9918797306156505,
+          "false_positive_rate": 0.0017891970283771094,
+          "tp": 133142,
+          "fp": 322,
+          "fn": 1858,
+          "tn": 179647
+        },
+        "macro_f1": 0.9453624967164014,
+        "hidden_detection": 0.898954405210833,
+        "solo_unit_detection": 0.8986111111111111,
+        "start_detection": 0.8983362521891418,
+        "spillover_false_alarm": 0.008968899212801652,
+        "quiet_hidden": {
+          "Exploitation": 0.29510309278350516,
+          "BufferOverflow": 0.663659793814433,
+          "Bruteforce": 0.7471264367816092,
+          "C2Beaconing": 0.9042145593869731
+        },
+        "predict_flows_per_s": 836859.1211712143
+      },
+      "SW_SOLO": {
+        "binary": {
+          "precision": 0.9970706837307414,
+          "recall_detection_rate": 0.9908740740740741,
+          "f1": 0.9939627211966072,
+          "false_positive_rate": 0.0021837094166217517,
+          "tp": 133768,
+          "fp": 393,
+          "fn": 1232,
+          "tn": 179576
+        },
+        "macro_f1": 0.9427579035918329,
+        "hidden_detection": 0.9454062392869387,
+        "solo_unit_detection": 0.9453703703703704,
+        "start_detection": 0.945446584938704,
+        "spillover_false_alarm": 0.00787198348173958,
+        "quiet_hidden": {
+          "Exploitation": 0.5902061855670103,
+          "BufferOverflow": 0.8002577319587629,
+          "Bruteforce": 0.8825031928480205,
+          "C2Beaconing": 0.946360153256705
+        },
+        "predict_flows_per_s": 782139.7487835463
+      },
+      "SW_SOLO_DEV": {
+        "binary": {
+          "precision": 0.9974497404999105,
+          "recall_detection_rate": 0.9908296296296296,
+          "f1": 0.9941286640109399,
+          "false_positive_rate": 0.0019003272785868678,
+          "tp": 133762,
+          "fp": 342,
+          "fn": 1238,
+          "tn": 179627
+        },
+        "macro_f1": 0.9441276725828363,
+        "hidden_detection": 0.9445491943777854,
+        "solo_unit_detection": 0.9448148148148148,
+        "start_detection": 0.9445709281961471,
+        "spillover_false_alarm": 0.008130081300813009,
+        "quiet_hidden": {
+          "Exploitation": 0.586340206185567,
+          "BufferOverflow": 0.8041237113402062,
+          "Bruteforce": 0.8773946360153256,
+          "C2Beaconing": 0.9425287356321839
+        },
+        "predict_flows_per_s": 786605.8203885412
+      },
+      "_counts": {
+        "flows": 314969,
+        "hidden": 11668,
+        "solo_units": 10800,
+        "start": 11420,
+        "busy_normal": 15498
+      }
+    }
+  }
+}

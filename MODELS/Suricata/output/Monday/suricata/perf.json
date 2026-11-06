@@ -1,0 +1,15 @@
+{
+  "pcap": "Monday-WorkingHours.pcap",
+  "runmode": "single",
+  "suricata_version": "This is Suricata version 8.0.7 RELEASE",
+  "rules_file": "/var/lib/suricata/rules/suricata.rules",
+  "home_net": "[192.168.10.0/24]",
+  "packets": 11709971,
+  "bytes": 10433095588,
+  "alerts": 1887228,
+  "startup_s": 22.147527978755534,
+  "engine_s": 97.17590618506074,
+  "peak_ram_mb": 570.6640625,
+  "packets_per_s": 120502.82276452002,
+  "mbit_per_s": 858.9038989258366
+}

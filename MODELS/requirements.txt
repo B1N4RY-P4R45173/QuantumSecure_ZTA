@@ -1,0 +1,34 @@
+# PQZTA — Known-attack detection experiments (TRUST Lab dataset)
+#
+# Install:
+#   python -m venv .venv
+#   Windows:     .venv\Scripts\activate
+#   Linux/macOS: source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# PyTorch note:
+#   On Windows and macOS, the default "torch" package is CPU-only (small download).
+#   On Linux, the default "torch" includes CUDA (very large download). For a CPU-only
+#   Linux install, run this first:
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   For an NVIDIA GPU, get the right command from https://pytorch.org/get-started/locally/
+
+# Data loading and preprocessing
+numpy>=1.26
+pandas>=2.2
+pyarrow>=15.0          # fast Parquet files for the preprocessed data
+
+# Classic ML and metrics
+scikit-learn>=1.4
+joblib>=1.3
+
+# Gradient boosting models
+xgboost>=2.0
+lightgbm>=4.3
+
+# Deep learning (LSTM)
+torch>=2.2
+
+# Plots and resource measurement
+matplotlib>=3.8
+psutil>=5.9            # CPU and RAM usage during benchmarks
