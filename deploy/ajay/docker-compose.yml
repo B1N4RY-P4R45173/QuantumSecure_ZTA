@@ -1,0 +1,93 @@
+# AJAY'S PC — the Policy Decision Point and the protected resource.
+#
+# Run from the repository root on Ajay's machine:
+#
+#   docker compose -f deploy/ajay/docker-compose.yml --env-file .env up -d
+#
+# Neither service here ever dials Abhinav's machine. The Gateway asks; these
+# answer. So Ajay's PC needs no route back, no inbound rule on Abhinav's side,
+# and no knowledge of where the Gateway is — only that whatever connects
+# holds a certificate this project's CA signed.
+#
+# That last clause is doing all the work. On a single host these two sit on
+# `internal: true` networks and are unreachable by construction; here their
+# ports are open on the LAN, so mutual TLS is the whole of the access control
+# and the certificate step in the runbook is mandatory.
+
+services:
+
+  # The Policy Decision Point. It holds the policy, the telemetry snapshot
+  # and the trust scorer, and answers SPA_VERIFY and SESSION_REVIEW.
+  #
+  # Its certificate must carry this machine's address, because that is what
+  # the Gateway will dial:
+  #   admin_cli.py issue-controller-cert --host <ajay-ip>
+  sdp-controller:
+    build:
+      context: ../..
+      dockerfile: ./docker/controller/Dockerfile
+    image: sdp-controller:latest
+    container_name: sdp-controller
+    env_file: ../../.env
+    environment:
+      - CONTROLLER_HOST=0.0.0.0
+      - CONTROLLER_PORT=9500
+      - CONTROLLER_POLICIES_PATH=/app/decision-inputs/policies.yaml
+      - CONTROLLER_TELEMETRY_PATH=/app/decision-inputs/telemetry_snapshot.json
+    # controller.key is 0600 by design, so the image's own unprivileged user
+    # cannot read it through a bind mount.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    ports:
+      # Published, because the Gateway is on another machine now. Reaching
+      # this port buys nothing without a Gateway certificate: client_certs
+      # are required and checked against the project CA only.
+      - "9500:9500"
+    volumes:
+      - ../../SDP_CONTROLLER/certs/pki:/app/SDP_CONTROLLER/certs/pki:ro
+      # A DIRECTORY, not the two files. A single-file bind mount follows the
+      # inode, so any editor that saves by rename leaves the container
+      # reading stale policy forever, silently.
+      - ../../SDP_CONTROLLER:/app/decision-inputs:ro
+    networks:
+      - sdp
+    restart: unless-stopped
+
+  # The protected resource. The only component with no outbound trust at all:
+  # it cannot ask the IDP whether a token is good, so it holds the IDP's
+  # RS256 PUBLIC key and checks the signature offline.
+  #
+  # Its certificate must carry this machine's address:
+  #   admin_cli.py issue-resource-cert --host <ajay-ip>
+  resource-node:
+    build:
+      context: ../..
+      dockerfile: ./docker/resource/Dockerfile
+    image: resource-node:latest
+    container_name: resource-node
+    env_file: ../../.env
+    environment:
+      # TLS, because the Gateway is on another machine and the inner leg now
+      # crosses the LAN carrying the client's bearer token. It also DEMANDS a
+      # client certificate, so reaching the port is worth nothing on its own
+      # -- which is what the internal-only network used to provide for free.
+      - RESOURCE_TLS=1
+      - RESOURCE_TLS_CERT_PATH=/app/resource-node/certs/pki/resource.crt
+      - RESOURCE_TLS_KEY_PATH=/app/resource-node/certs/pki/resource.key
+      - RESOURCE_CA_CERT_PATH=/app/resource-node/certs/pki/ca.crt
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    ports:
+      - "7443:7443"
+    volumes:
+      # The IDP's public key, copied from Abhinav's machine. A copy mints no
+      # tokens, which is why distributing it to the most exposed component is
+      # safe.
+      - ../../IDENTITY_PROVIDER/certs/idp_jwt_public.pem:/app/resource-node/certs/idp_jwt_public.pem:ro
+      - ../../resource-node/certs/pki:/app/resource-node/certs/pki:ro
+    networks:
+      - sdp
+    restart: unless-stopped
+
+networks:
+  sdp:
+    driver: bridge
+    name: sdp-ajay

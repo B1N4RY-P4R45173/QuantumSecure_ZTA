@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import os
 import socket
+import ssl
 from dataclasses import dataclass
 
 from firewall.sessions import Session
@@ -112,6 +113,47 @@ def error_response(status_code: int, message: str) -> bytes:
     return head + body
 
 
+def _tls_context() -> ssl.SSLContext | None:
+    """TLS for the inner leg, or None to keep it cleartext.
+
+    None is correct on a single host: the resource is on an internal-only
+    network with no route off it, so a second TLS session would buy nothing
+    but a certificate to rotate, while costing the plaintext visibility that
+    justifies terminating in the first place.
+
+    RESOURCE_TLS=1 is for the deployment that breaks that assumption — a
+    resource on ANOTHER MACHINE, where the inner leg crosses a real network
+    carrying the client's bearer token. It is mutual: the Gateway verifies
+    the resource's certificate against the project CA, and presents its own
+    gateway.crt so the resource can refuse anything that is not a Gateway.
+
+    A misconfiguration here fails closed. If the flag is set and the bundle
+    is unusable the Gateway refuses to start, rather than quietly falling
+    back to sending tokens across the network in the clear — which is the
+    one outcome this flag exists to prevent.
+    """
+    if os.environ.get("RESOURCE_TLS", "").strip() not in ("1", "true", "yes"):
+        return None
+
+    ca = os.environ.get("GATEWAY_CA_CERT_PATH", "./certs/pki/ca.crt")
+    cert = os.environ.get("GATEWAY_TLS_CERT_PATH", "./certs/pki/gateway.crt")
+    key = os.environ.get("GATEWAY_TLS_KEY_PATH", "./certs/pki/gateway.key")
+    try:
+        ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=ca)
+        ctx.load_cert_chain(cert, key)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except (FileNotFoundError, ssl.SSLError, OSError) as exc:
+        raise SystemExit(
+            f"RESOURCE_TLS is on but the certificate bundle is unusable "
+            f"({exc}). Refusing to start: falling back to cleartext would "
+            f"send bearer tokens across the network. Run "
+            f"`admin_cli.py issue-resource-cert` and copy the bundle.") from exc
+
+    status(log, "Inner leg: HTTPS to the resource (mutual TLS, project CA)",
+           ca=ca, certificate=cert)
+    return ctx
+
+
 class Router:
     """Relays one inspected request to the resource and the answer back."""
 
@@ -124,6 +166,7 @@ class Router:
         self._connect_timeout = connect_timeout
         self._io_timeout = io_timeout
         self._max_response_bytes = max_response_bytes
+        self._tls = _tls_context()
 
     @property
     def destination(self) -> str:
@@ -193,14 +236,30 @@ class Router:
         try:
             sock = socket.create_connection((self._host, self._port),
                                             timeout=self._connect_timeout)
+            if self._tls is not None:
+                # Only when the resource is on another machine. See _tls_context.
+                sock = self._tls.wrap_socket(sock, server_hostname=self._host)
             sock.settimeout(self._io_timeout)
             sock.sendall(request)
             # Nothing more will be sent, so half-close: a resource that waits
             # for more of a request it already has would stall the exchange.
-            try:
-                sock.shutdown(socket.SHUT_WR)
-            except OSError:
-                pass  # some stacks refuse a half-close; the read below still works
+            #
+            # NOT over TLS, and this is not a style choice. CPython's
+            # ssl.SSLSocket.shutdown() sets self._sslobj = None before
+            # delegating to the plain socket, so every recv() afterwards
+            # bypasses decryption and hands back raw ciphertext. The symptom
+            # is a relay that "works" and returns bytes which are not HTTP;
+            # test_the_inner_leg_works_over_mutual_tls caught exactly that.
+            #
+            # Dropping it costs nothing here. The request carries
+            # `Connection: close`, so the resource answers and closes without
+            # needing to see a FIN first, and the read below still ends at
+            # EOF.
+            if self._tls is None:
+                try:
+                    sock.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass  # some stacks refuse a half-close; the read still works
             return self._read_response(sock)
         except socket.timeout as exc:
             raise UpstreamUnavailable(f"{self.destination} timed out") from exc

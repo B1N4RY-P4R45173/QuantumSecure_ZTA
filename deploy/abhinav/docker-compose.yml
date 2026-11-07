@@ -1,0 +1,103 @@
+# ABHINAV'S PC — the Identity Provider, and the Gateway in WSL.
+#
+#   Windows side : the client agent, run natively so it can reach Windows
+#                  Hello. Not a container; see deploy/README.md.
+#   Docker side  : this file.
+#
+# Run it from WSL on Abhinav's machine, from the repository root:
+#
+#   docker compose -f deploy/abhinav/docker-compose.yml --env-file .env up -d
+#
+# WHY THERE IS NO INTERNAL NETWORK HERE. In the single-host compose the
+# Controller and the resource hide on `internal: true` networks, which is
+# most of what protects them. Split across machines that protection is gone:
+# the Controller is on Ajay's PC and the Gateway reaches it over the LAN.
+# What replaces it is mutual TLS on every link, which is why the certificate
+# step in the runbook is not optional here the way it nearly is on one host.
+#
+# Direction of travel is unchanged, and still the thing to point at: the
+# Gateway dials the IDP and the Controller, and neither ever dials back. The
+# Gateway therefore needs no inbound control port, and Ajay's PC needs no
+# route back to Abhinav's.
+
+services:
+
+  # The Identity Provider. Published on 9000 for the client and 9443 for the
+  # Gateway's mTLS link. Both are reached over the LAN now, so the IDP
+  # certificate must carry this machine's address:
+  #   admin_cli.py issue-idp-cert --host <abhinav-ip> --host sdp-idp
+  sdp-idp:
+    build:
+      context: ../..
+      dockerfile: ./docker/idp/Dockerfile
+    image: sdp-idp:latest
+    container_name: sdp-idp
+    env_file: ../../.env
+    environment:
+      - IDP_HOST=0.0.0.0
+      - IDP_PORT=9000
+      - IDP_GATEWAY_LINK_PORT=9443
+    # The image's own user is uid 10001 and cannot write to a host directory
+    # owned by someone else; SQLite then fails with "attempt to write a
+    # readonly database" and the IDP crash-loops.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - ../../IDENTITY_PROVIDER/data:/app/IDENTITY_PROVIDER/data
+      - ../../IDENTITY_PROVIDER/certs:/app/IDENTITY_PROVIDER/certs
+    networks:
+      - sdp
+    restart: unless-stopped
+
+  # The Policy Enforcement Point. It decides nothing: every knock goes to
+  # Ajay's Controller and this process does what the answer says.
+  sdp-gateway:
+    build:
+      context: ../..
+      dockerfile: ./docker/gateway/Dockerfile
+    image: sdp-gateway:latest
+    container_name: sdp-gateway
+    env_file: ../../.env
+    environment:
+      # The IDP is on this same machine. host.docker.internal resolves to the
+      # host from inside the container on every platform Docker supports, and
+      # the extra_hosts line below makes it work on Linux/WSL too.
+      - GATEWAY_IDP_LINK_URL=https://host.docker.internal:9443
+      # The Controller is on AJAY'S machine. This address must be one the
+      # Controller's certificate carries, or the handshake fails before a
+      # single decision is asked for.
+      - GATEWAY_CONTROLLER_URL=https://${AJAY_IP:?set AJAY_IP in .env}:9500
+      # So is the resource.
+      - RESOURCE_HOST=${AJAY_IP:?set AJAY_IP in .env}
+      - RESOURCE_PORT=7443
+      # The inner leg now crosses the LAN carrying the client's bearer token,
+      # so it is TLS and the resource demands a Gateway certificate. On one
+      # host this is off, because there the resource has no route off an
+      # internal network. Here it does.
+      - RESOURCE_TLS=1
+    cap_add:
+      - NET_ADMIN            # insert nftables rules
+      - NET_BIND_SERVICE     # bind the privileged proxy port
+    # Published for the native Windows client. WSL2 forwards Windows'
+    # localhost to listening sockets inside the distro, so the client reaches
+    # these at 127.0.0.1 with no port-proxy needed.
+    ports:
+      - "62201:62201/udp"    # SPA knock
+      - "443:443/tcp"        # the TLS proxy, default-DROP until a knock
+    volumes:
+      - ../../SDP_GATEWAY/certs/pki:/app/SDP_GATEWAY/certs/pki:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - sdp-idp
+    networks:
+      - sdp
+    restart: unless-stopped
+
+networks:
+  # One ordinary bridge. Not internal: both services here must reach the LAN.
+  sdp:
+    driver: bridge
+    name: sdp-abhinav

@@ -90,6 +90,22 @@ CONTROLLER_BUNDLE_DIR = Path("./certs/pki/controller")
 # before a single decision is asked for.
 CONTROLLER_SAN_HOSTS = ["sdp-controller", "localhost", "127.0.0.1"]
 
+# Where issue-resource-cert writes a resource node's bundle, and the names a
+# Gateway may dial it by.
+#
+# On a single host this bundle is not needed at all: the resource sits on an
+# internal-only Docker network with no route off it, so the Gateway's inner
+# leg is cleartext on purpose (proxy/router.py explains the trade).
+#
+# It becomes necessary the moment the resource moves to its own machine,
+# because then that leg crosses a real network while carrying the client's
+# bearer token. The certificate turns the inner leg into mutual TLS: the
+# Gateway verifies it is talking to the real resource, and the resource
+# verifies the connection came from a Gateway this CA issued, which is a
+# stronger guarantee than the internal-network assumption it replaces.
+RESOURCE_BUNDLE_DIR = Path("./certs/pki/resource")
+RESOURCE_SAN_HOSTS = ["resource-node", "localhost", "127.0.0.1"]
+
 
 def _init_ca(_args: argparse.Namespace) -> int:
     try:
@@ -167,6 +183,36 @@ def _issue_proxy_cert(args: argparse.Namespace) -> int:
 # Gateway that dials in. The Gateway's half is issue-gateway-cert, unchanged -
 # it reuses the client certificate it already holds, so the Controller trusts
 # one identity per Gateway rather than two.
+def _issue_resource_cert(args: argparse.Namespace) -> int:
+    """A resource node's server certificate, plus the CA it checks Gateways against.
+
+    Only needed when the resource does NOT share a host with the Gateway. On
+    one host the inner leg is cleartext by design; across machines it carries
+    the client's bearer token over a real network, so it has to be TLS, and
+    the resource has to be sure the connection came from a Gateway rather
+    than from anything else that can reach the port.
+    """
+    ca = _load_ca()
+    if ca is None:
+        return 1
+    bundle = RESOURCE_BUNDLE_DIR
+    extra = [h for h in (args.host or []) if h not in RESOURCE_SAN_HOSTS]
+    hosts = RESOURCE_SAN_HOSTS + extra
+    cert_utils.issue(*ca, common_name="resource-node", kind="server", out_dir=bundle,
+                     hosts=hosts, file_stem="resource")
+    shutil.copyfile(Path(settings.idp_ca_dir) / root_ca.CA_CERT_NAME,
+                    bundle / root_ca.CA_CERT_NAME)
+    print(f"issued the resource node's certificate -> {bundle}/")
+    print(f"  resource.crt, resource.key  valid for {', '.join(hosts)}")
+    print("  ca.crt                      what it checks a Gateway's certificate against")
+    print("Copy that folder to the resource machine as resource-node/certs/pki/ .")
+    print("Then set RESOURCE_TLS=1 on BOTH sides: the resource serves TLS and")
+    print("demands a client certificate, and the Gateway presents its gateway.crt.")
+    print("Without it the inner leg is cleartext, which is only safe when the")
+    print("resource shares a host with the Gateway on an internal-only network.")
+    return 0
+
+
 def _issue_controller_cert(args: argparse.Namespace) -> int:
     ca = _load_ca()
     if ca is None:
@@ -411,6 +457,15 @@ def main() -> int:
                         f"for several ({', '.join(CONTROLLER_SAN_HOSTS)} are always "
                         "included)")
     p.set_defaults(func=_issue_controller_cert)
+
+    p = sub.add_parser("issue-resource-cert",
+                       help="a resource node's server certificate, for a resource "
+                            "that does NOT share a host with the Gateway")
+    p.add_argument("--host", action="append",
+                   help="another name or IP a Gateway reaches this resource by; repeat "
+                        f"for several ({', '.join(RESOURCE_SAN_HOSTS)} are always "
+                        "included)")
+    p.set_defaults(func=_issue_resource_cert)
 
     p = sub.add_parser("list-gateways")
     p.set_defaults(func=_list_gateways)

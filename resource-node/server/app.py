@@ -28,6 +28,7 @@ bounds how long such a thread can sit there in the first place.
 from __future__ import annotations
 
 import socket
+import ssl
 from http.server import ThreadingHTTPServer
 
 from server.endpoints import ResourceContext, ResourceRequestHandler
@@ -65,23 +66,59 @@ class ResourceServer(ThreadingHTTPServer):
         super().__init__(server_address, ResourceRequestHandler)
 
 
-def build(host: str, port: int, context: ResourceContext) -> ResourceServer:
+def build(host: str, port: int, context: ResourceContext,
+          tls: ssl.SSLContext | None = None) -> ResourceServer:
     """Bind the listener. Raises OSError if the address is unavailable.
 
     Binding is separated from serving so a caller — the entrypoint, or a test
     — can learn the real port (``server.server_address``) before any request
     is served, and so a bind failure is reported as a startup failure rather
     than from inside the run loop.
+
+    ``tls`` is None on a single-host deployment, where this node sits on an
+    internal-only network with no route off it and the inner leg is cleartext
+    by design. Pass a context when the Gateway is on ANOTHER MACHINE: that
+    leg then crosses a real network carrying the client's bearer token, and
+    the assumption the cleartext rests on no longer holds.
     """
     try:
         server = ResourceServer((host, port), context)
     except OSError as exc:
         status(log, "Bind failed", host=host, port=port, error=str(exc))
         raise
+
+    if tls is not None:
+        # Wrapped after bind, so a certificate problem is still a startup
+        # failure rather than a per-request one.
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
+
     bound_host, bound_port = server.server_address[:2]
     status(log, "Listener bound", host=bound_host, port=bound_port,
-           protocol="http (plaintext, inner leg)", resource=context.name)
+           protocol=("https (mutual TLS, project CA)" if tls
+                     else "http (plaintext, inner leg)"),
+           resource=context.name)
     return server
+
+
+def tls_context(cert_path: str, key_path: str, ca_path: str) -> ssl.SSLContext:
+    """Server TLS that also DEMANDS a Gateway certificate.
+
+    One-way TLS would encrypt the leg and leave the port open to anything
+    that can route to it. Requiring a client certificate this project's CA
+    signed makes reaching the port worth nothing on its own, which is what
+    the internal-only network used to provide for free.
+
+    This does not replace the token check. The node still verifies the RS256
+    signature offline, so a Gateway that was compromised still cannot conjure
+    a request — mutual TLS says which machine is connecting, the token says
+    which user it is acting for, and the node wants both.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert_path, key_path)
+    ctx.load_verify_locations(ca_path)
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
 
 
 def serve(server: ResourceServer) -> None:
@@ -104,9 +141,10 @@ def serve(server: ResourceServer) -> None:
         status(log, "Resource node stopped")
 
 
-def run(host: str, port: int, context: ResourceContext) -> None:
+def run(host: str, port: int, context: ResourceContext,
+        tls: ssl.SSLContext | None = None) -> None:
     """Bind and serve. The entrypoint's one call."""
-    serve(build(host, port, context))
+    serve(build(host, port, context, tls))
 
 
 def resolve_bind_host(host: str) -> str:

@@ -27,6 +27,7 @@ empty JWKS.
 """
 
 import os
+import ssl
 import sys
 
 # This component's own directory is the import root — modules here import each
@@ -112,7 +113,33 @@ def main() -> int:
     host = os.environ.get("RESOURCE_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
     status(log, "=" * 60)
     status(log, "PROTECTED RESOURCE NODE STARTING")
-    status(log, "Transport: plain HTTP (the Gateway terminates TLS and re-forwards)")
+
+    # The inner leg is cleartext when this node shares a host with the
+    # Gateway, because then it sits on an internal-only network with no route
+    # off it and a second TLS session would buy nothing but a certificate to
+    # rotate. Set RESOURCE_TLS=1 when the Gateway is on ANOTHER MACHINE: that
+    # leg then crosses a real network carrying the client's bearer token, and
+    # the assumption the cleartext rests on is simply false.
+    tls = None
+    if os.environ.get("RESOURCE_TLS", "").strip() in ("1", "true", "yes"):
+        cert = os.environ.get("RESOURCE_TLS_CERT_PATH", "./certs/pki/resource.crt")
+        key = os.environ.get("RESOURCE_TLS_KEY_PATH", "./certs/pki/resource.key")
+        ca = os.environ.get("RESOURCE_CA_CERT_PATH", "./certs/pki/ca.crt")
+        try:
+            tls = app.tls_context(cert, key, ca)
+        except (FileNotFoundError, ssl.SSLError, OSError) as exc:
+            # Fail closed, exactly as a missing verification key does: serving
+            # the token in cleartext because a certificate was missing is the
+            # failure this flag exists to prevent.
+            status(log, "ABORT: RESOURCE_TLS is on but the certificate bundle "
+                        "is unusable", cert=cert, key=key, ca=ca, error=str(exc))
+            return 1
+        status(log, "Transport: HTTPS, and a Gateway certificate is REQUIRED "
+                    "(mutual TLS, project CA)")
+    else:
+        status(log, "Transport: plain HTTP (the Gateway terminates TLS and "
+                    "re-forwards; safe only on an internal-only network)")
+
     status(log, "Token validation: offline, RS256, no route to the IDP")
     status(log, "=" * 60)
 
@@ -135,7 +162,7 @@ def main() -> int:
            key=context.authority.key_path)
 
     try:
-        app.run(host, port, context)
+        app.run(host, port, context, tls)
     except OSError as exc:
         status(log, "ABORT: could not listen", host=host, port=port, error=str(exc))
         return 1
