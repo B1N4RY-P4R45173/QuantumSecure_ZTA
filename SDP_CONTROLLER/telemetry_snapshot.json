@@ -2,37 +2,55 @@
   "10.0.0.21": {
     "suricata": null,
     "ml": {
-      "flow_count": 1,
+      "flow_count": 40,
       "malicious_flows": 0,
       "anomaly_rate": 0.0,
       "top_class": "benign",
       "class_counts": {
-        "benign": 1
-      }
+        "Normal": 40
+      },
+      "ae_flagged": 0,
+      "ae_rate": 0.0,
+      "quarantine_hits": 0,
+      "max_attack_probability": 0.000921,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "Normal"
     }
   },
   "10.0.0.33": {
     "suricata": null,
     "ml": {
-      "flow_count": 1,
+      "flow_count": 40,
       "malicious_flows": 0,
       "anomaly_rate": 0.0,
       "top_class": "benign",
       "class_counts": {
-        "benign": 1
-      }
+        "Normal": 40
+      },
+      "ae_flagged": 0,
+      "ae_rate": 0.0,
+      "quarantine_hits": 0,
+      "max_attack_probability": 0.000921,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "Normal"
     }
   },
   "10.0.0.5": {
     "suricata": null,
     "ml": {
-      "flow_count": 1,
+      "flow_count": 40,
       "malicious_flows": 0,
       "anomaly_rate": 0.0,
       "top_class": "benign",
       "class_counts": {
-        "benign": 1
-      }
+        "Normal": 40
+      },
+      "ae_flagged": 0,
+      "ae_rate": 0.0,
+      "quarantine_hits": 0,
+      "max_attack_probability": 0.000921,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "Normal"
     }
   },
   "10.0.0.9": {
@@ -54,14 +72,23 @@
       ]
     },
     "ml": {
-      "flow_count": 4,
-      "malicious_flows": 4,
-      "anomaly_rate": 1.0,
-      "top_class": "port_scan",
+      "flow_count": 40,
+      "malicious_flows": 39,
+      "anomaly_rate": 0.975,
+      "top_class": "Web attack",
       "class_counts": {
-        "port_scan": 3,
-        "c2_beacon": 1
-      }
+        "Web attack": 26,
+        "Normal": 1,
+        "Brute force": 7,
+        "Scan / Recon": 5,
+        "Spoofing / MITM": 1
+      },
+      "ae_flagged": 40,
+      "ae_rate": 1.0,
+      "quarantine_hits": 20,
+      "max_attack_probability": 0.992436,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "C2 / Bot"
     }
   },
   "175.45.176.5": {
@@ -76,6 +103,20 @@
         "ET GEO Traffic from Sanctioned Region"
       ]
     },
-    "ml": null
+    "ml": {
+      "flow_count": 40,
+      "malicious_flows": 0,
+      "anomaly_rate": 0.0,
+      "top_class": "benign",
+      "class_counts": {
+        "Normal": 40
+      },
+      "ae_flagged": 0,
+      "ae_rate": 0.0,
+      "quarantine_hits": 0,
+      "max_attack_probability": 0.000981,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "Normal"
+    }
   }
 }

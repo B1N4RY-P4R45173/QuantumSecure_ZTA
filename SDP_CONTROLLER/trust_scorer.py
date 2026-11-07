@@ -74,6 +74,22 @@ assert TOTAL_MAX == 100
 CRITICAL_SEVERITY = 1
 ML_QUARANTINE_RATE = 0.5
 
+# The second ML wire, and the one with research behind it. The PC 2 quarantine
+# sweep (runs/edge_inline_eval_20261104_164043) swept minimum hits 1/2/3/5/8
+# against windows of 30-600s and settled on TWO qualifying rows, where a row
+# qualifies only if the classifier is at least 0.9 confident AND the
+# autoencoder independently calls it unlike normal. Requiring both detectors
+# to agree is what took the share of normal sensor traffic wrongly blocked
+# from 3.8% down to 0.50%.
+#
+# It earns its place beside the rate because the two catch different things.
+# On the verification fixture a rate of 50% never fires for Scan / Recon
+# (only 28% of those rows are labelled an attack - stealthy scans look close
+# to normal), yet they still produce 17 quarantine-grade hits. Conversely a
+# flood is caught by either. Normal traffic produces neither: 0% labelled,
+# 0 hits.
+ML_QUARANTINE_HITS = 2
+
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -157,10 +173,19 @@ def _disqualifier(suricata: dict | None, ml: dict | None) -> str | None:
             return f"critical IDS signature{which}"
 
     if ml:
-        rate = ml.get("anomaly_rate", 0.0) or 0.0
         flows = ml.get("flow_count", 0) or 0
+        top = ml.get("top_class", "unknown")
+
+        # Both detectors agreeing on a couple of rows is stronger evidence
+        # than a large share of weakly-flagged ones, so it is checked first
+        # and names itself in the reason.
+        hits = ml.get("quarantine_hits", 0) or 0
+        if flows and hits >= ML_QUARANTINE_HITS:
+            return (f"{hits} flow(s) of {flows} met the quarantine rule "
+                    f"(classifier >= 0.9 and autoencoder agreeing, top={top})")
+
+        rate = ml.get("anomaly_rate", 0.0) or 0.0
         if flows and rate >= ML_QUARANTINE_RATE:
-            top = ml.get("top_class", "unknown")
             return (f"{rate:.0%} of {flows} observed flow(s) classified "
                     f"malicious (top={top})")
 
