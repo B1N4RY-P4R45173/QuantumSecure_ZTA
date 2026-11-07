@@ -52,3 +52,35 @@ CLAUDE2.md
 
 # Stepwise demo client session: holds live bearer tokens.
 demo/.session.json
+
+# --- Generated, not source -------------------------------------------------
+# The synthetic RandomForest and the 5,000 flows it was fitted on. These were
+# the placeholder detector; the real trained models in MODELS/trained/ replaced
+# them and no code loads these any more. SDP_CONTROLLER/README.md already marks
+# both "(generated)", and they are rebuilt with:
+#     python -m ml.generate_dataset && python -m ml.train
+# Keeping 5.5 MB of regenerable binary in the history helps nobody.
+SDP_CONTROLLER/ml/dataset.csv
+SDP_CONTROLLER/ml/model.joblib
+# Its header records an absolute path from whichever machine trained it.
+SDP_CONTROLLER/ml/model_report.txt
+
+# Run output from the training and evaluation scripts. Large, dated, and
+# reproducible from the scripts themselves.
+runs/
+MODELS/runs/
+
+# Python build and test leftovers.
+*.egg-info/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editor and OS droppings.
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
