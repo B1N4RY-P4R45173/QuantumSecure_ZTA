@@ -164,7 +164,23 @@ services:
     depends_on:
       - sdp-idp
       - sdp-gateway
-    restart: unless-stopped
+    # NOT restarted, unlike every other service here. The client is an
+    # interactive one-shot agent: it prompts for the first factor, then asks
+    # the authenticator to sign the WebAuthn challenge. Under "up -d" it has
+    # no console, so it aborts on the username prompt -- and with a restart
+    # policy it did that every 60 seconds forever, filling the logs and
+    # looking like a broken deployment when nothing was wrong.
+    #
+    # Run it on demand instead, which also gives it the terminal it needs:
+    #   docker compose run --rm sdp-client
+    # Non-interactively, set CLIENT_USERNAME / CLIENT_PASSWORD in .env (or
+    # pass --username/--password); the second factor still needs an enrolled
+    # credential, so see the note below.
+    #
+    # "up" deliberately starts it anyway rather than excluding it from the
+    # default profile: it exits once, visibly, instead of being silently
+    # absent from "compose ps" when someone expects a client.
+    restart: "no"
 
   resource-node:
     build:
