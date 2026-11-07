@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run the stepwise client in SDP_CLIENT's own virtual environment, so a
+# reviewer types `./demo/ztna login` and nothing else. Without this the
+# system interpreter is used and fido2/cryptography are simply absent.
+#
+# TPM_TCTI points at the software TPM this demo runs against. An existing
+# value in the environment wins, so a host with a real TPM needs no edit.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export TPM_TCTI="${TPM_TCTI:-swtpm:host=127.0.0.1,port=2321}"
+exec "$HERE/../SDP_CLIENT/.venv/bin/python" "$HERE/ztna.py" "$@"

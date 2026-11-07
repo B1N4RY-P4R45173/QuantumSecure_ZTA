@@ -65,9 +65,6 @@ services:
     image: sdp-controller:latest
     container_name: sdp-controller
     env_file: .env
-    environment:
-      - CONTROLLER_HOST=0.0.0.0
-      - CONTROLLER_PORT=9500
     # Run as the host user that owns the mounted key bundle. controller.key
     # is 0600 by design — a private key readable by anyone on the host would
     # be the worse bug — so the image's own unprivileged user cannot read it
@@ -85,8 +82,27 @@ services:
       # operator can edit policy or refresh telemetry without a rebuild.
       # Read-only: the Controller reads both and writes neither — the
       # snapshot's writer is the detection pipeline, elsewhere.
-      - ./SDP_CONTROLLER/policies.yaml:/app/SDP_CONTROLLER/policies.yaml:ro
-      - ./SDP_CONTROLLER/telemetry_snapshot.json:/app/SDP_CONTROLLER/telemetry_snapshot.json:ro
+      #
+      # A DIRECTORY, deliberately, where this used to bind the two files
+      # individually. A single-file bind mount follows the INODE, not the
+      # path, so the moment anything REPLACES the file rather than writing
+      # through it the container keeps reading the old content forever.
+      # Almost everything replaces files: vim, VS Code and most editors save
+      # to a temporary file and rename it over the original, and so does
+      # `git checkout`. The symptom is the worst kind — the Controller goes
+      # on serving decisions from stale policy with no error anywhere, and
+      # the operator is looking at the new file on the host wondering why it
+      # is being ignored.
+      #
+      # Mounting the directory makes each open() resolve the name again, so
+      # a replaced file is picked up. The paths below point here instead of
+      # at /app/SDP_CONTROLLER so the image's own copies stay untouched.
+      - ./SDP_CONTROLLER:/app/decision-inputs:ro
+    environment:
+      - CONTROLLER_HOST=0.0.0.0
+      - CONTROLLER_PORT=9500
+      - CONTROLLER_POLICIES_PATH=/app/decision-inputs/policies.yaml
+      - CONTROLLER_TELEMETRY_PATH=/app/decision-inputs/telemetry_snapshot.json
     networks:
       - controller-net
     restart: unless-stopped

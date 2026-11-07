@@ -1,41 +1,44 @@
 # Live demonstration runbook
 
-Twelve to fifteen minutes, six beats, nothing pre-recorded. Every number on
-screen is produced live by the running system; the detector output comes from
-the real trained models, not from a fixture someone typed.
+Everything below is typed by hand. There is no script that runs the demo —
+`demo/step` exists only as a rehearsal aid, and the real demonstration is the
+commands in this file, entered one at a time, with the server-side logs
+visible beside them.
+
+The client is `demo/ztna`, which exposes one stage per command. It calls the
+same modules `SDP_CLIENT/main.py` calls — `fido2_agent.client`,
+`spa.token_flow`, `dataplane.session` — so nothing here is a demo-only code
+path. If `ztna` worked and `main.py` did not, the demonstration would be a
+lie.
 
 ---
 
 ## Before the reviewer arrives
 
-Run this ten minutes early, not during the demo. Each line can fail, and you
-want to find that out alone.
-
 ```bash
-# 1. Software TPM (the client cannot enrol a FIDO2 credential without one)
+# 1. Software TPM. Without it the client cannot sign a FIDO2 assertion.
 swtpm socket --tpm2 --tpmstate dir=~/.swtpm/ztna \
   --server type=tcp,port=2321,bindaddr=127.0.0.1 \
   --ctrl type=tcp,port=2322,bindaddr=127.0.0.1 \
   --flags not-need-init,startup-clear &
 
 # 2. The stack
-docker compose up -d
-docker compose ps          # idp, controller, gateway, resource-node running
+docker compose up -d && docker compose ps
 
-# 3. Start from clean telemetry
+# 3. Clean telemetry to start from
 python3 demo/telemetry.py clean
 
-# 4. Rehearse the whole thing once, end to end
-./demo/step 1 && ./demo/step 2
+# 4. Rehearse once, end to end
+./demo/ztna logout && ./demo/ztna login && ./demo/ztna knock && ./demo/ztna connect
 ```
 
-If step 2 does not end in `http_status=200`, stop and fix it. Everything
-after beat 2 depends on it.
+If step 4 does not end in `HTTP 200`, stop and fix it before anything else.
 
-**Have ready in case you are asked:** `SDP_CONTROLLER/policies.yaml`,
-`SDP_CONTROLLER/trust_scorer.py`, and `docker-compose.yml` open in an editor.
-The three questions that come up are "where is that rule written?", "who
-decided the weights?" and "what stops the Controller reaching the data?".
+Then **log out again** so the demo starts from nothing:
+
+```bash
+./demo/ztna logout
+```
 
 ---
 
@@ -45,165 +48,311 @@ decided the weights?" and "what stops the Controller reaching the data?".
 ./demo/layout.sh
 ```
 
-Three panes. Gateway logs top-left, Controller logs top-right, and your
-driver pane along the bottom. Both log panes are filtered to the lines that
-carry the story — an unfiltered log cannot be read at demo speed, and the
-three lines that matter would scroll past unseen.
+Gateway logs top-left, Controller logs top-right, and your shell along the
+bottom. Both log panes are filtered — an unfiltered log cannot be read at
+demo speed, and the three lines that matter scroll past unseen.
 
-Make the font large. A reviewer reading over your shoulder is the normal
-case, and 11pt will cost you the room.
+Large font. Someone is reading over your shoulder.
 
 ---
 
-## The six beats
+## Act 1 — The door is shut
 
-### 0 — The system, and the door that is shut · `./demo/step 0`
+**Show the services, and read the firewall out of the running container:**
 
-Shows the four services, then reads the firewall table **out of the running
-container** rather than out of a config file.
+```bash
+docker compose ps
+docker exec sdp-gateway nft list table inet sdp_spa
+```
 
-> "Four services. The Controller is the one that decides, and it sits on its
+> "Four services. The Controller is the one that decides, and it is on its
 > own internal network — no published port, no route to the resource. If you
 > compromise the thing that makes the decision, you still cannot reach the
 > data."
 
 Point at `tcp dport 443 drop`:
 
-> "That is the resource port, and it is DROP, not REJECT. Nothing answers it.
-> The line above is conntrack — a session already established keeps flowing."
+> "That is the resource port. DROP, not REJECT — nothing answers it. The line
+> above is conntrack, so a session already established keeps flowing."
 
-### 1 — Prove the door is dark · `./demo/step 1`
+**Now prove it is dark.** A closed port refuses instantly; this one says
+nothing:
 
-Connects to the Gateway's 443 from inside the client network, with no knock.
-
-> "A closed port refuses instantly and tells you it exists. Watch this one."
-
-Eight seconds of nothing, then `TIMEOUT`.
+```bash
+docker run --rm --network client-net python:3.12-slim \
+  python -c "import socket,time; s=socket.socket(); s.settimeout(8); t=time.time()
+try:
+    s.connect(('sdp-gateway',443)); print('REACHED')
+except socket.timeout: print(f'TIMEOUT after {time.time()-t:.1f}s')
+except ConnectionRefusedError: print('REFUSED')"
+```
 
 > "No RST, no banner, nothing. A port scanner cannot tell this host from an
-> unused address. That is the Software Defined Perimeter: the service is
-> invisible until you have already authenticated."
+> unused address."
 
-### 2 — The full flow · `./demo/step 2`
+---
 
-The headline. Six stages, and the log names each as it happens. Let it run
-and narrate against the panes.
+## Act 2 — Identity, before anything is open
 
-What to point at, in order:
+```bash
+./demo/ztna login
+```
 
-| On screen | Say |
-| --- | --- |
-| `Step 4/6: Signing … with the TPM key (ES256)` | the private key never leaves the chip; this is the TPM signing, not software |
-| `Attestation format: tpm` / `Hardware-attested: True` | the IDP made the chip certify its own key, and verified that certificate before enrolling |
-| `Knock ticket: 134 bytes` | the IDP's signed statement of who this is **and** what posture it attested |
-| `ML-KEM encapsulated … ct_len=1088` | post-quantum key agreement, NIST ML-KEM-768 |
-| `[TEE] … 1 secret(s) zeroized` | the shared secret is wiped from memory after use |
-| Gateway pane: `SPA knock received` | one UDP packet, and the door is still shut at this instant |
-| Controller pane: `Trust score computed … posture=40/60` | the decision is made in a **different process**, reached over mutual TLS |
-| Gateway pane: `Firewall rule inserted` | the hole opens only now, pinned to this source, with a lease |
-| Gateway pane: `PROXY FORWARD` | TLS is terminated and inspected here, then re-opened to the resource |
-| `http_status=200` | and the resource validated the token itself — it does not trust the Gateway |
+This is three stages, and the output labels each. Narrate against it:
 
-If asked why the score is 40/60 and not 60: this laptop reports
-`disk_encrypted=False antivirus_active=False`. Say so. The score is reading
-real posture, which is the point.
+**First factor.** 
+> "The password alone proves nothing — it buys a short-lived `login_token`
+> that only authorises the FIDO2 ceremony."
 
-### 3 — Compromise the device mid-session · `./demo/step 3`
+**Hardware trust anchor.** 
+> "No software fallback. If there is no anchor, the client aborts rather than
+> identifying itself with a key that could be copied."
 
-The beat that distinguishes this from a VPN. It opens a fresh session,
-confirms the pinhole is open, then flips the device's telemetry.
+**Posture.** `os_patch_days`, `disk_encrypted`, `antivirus_active`.
+> "This is a report, not a verdict. The client never scores itself. The IDP
+> decides which bits the report earns, adds the three it attests itself, and
+> signs all six into the knock ticket."
+
+**FIDO2 ceremony.** Point at `Signing ... with the TPM key (ES256)` in the log.
+> "The private key never leaves the chip. On first enrolment the TPM
+> *certifies* its own key and the IDP verifies that certificate before it
+> will enrol the credential."
+
+Then the summary: `hardware attested True`, `amr ['pwd','fido2','hwattest']`,
+`knock ticket 134 bytes`, `gateway ML-KEM key 1184 bytes`.
+
+**The point to land:**
+
+```bash
+docker exec sdp-gateway nft list table inet sdp_spa
+```
+
+> "Fully authenticated, hardware-attested, holding a valid token — and the
+> firewall is unchanged. Authentication did not open anything."
+
+---
+
+## Act 3 — One packet opens the door
+
+```bash
+./demo/ztna knock
+```
+
+> "One UDP packet. Inside it: the 134-byte ticket the IDP signed, sealed with
+> ML-KEM-768 — post-quantum key agreement — then HKDF and AES-256-GCM."
+
+Watch the **Gateway pane** as it arrives:
+
+```
+SPA knock received       | client_ip=172.18.0.1
+SPA knock verified - forwarding to Controller | posture=device_managed,os_patched,known_device
+```
+
+> "The Gateway checked the IDP's signature and read the posture bits out of
+> the ticket. It does not decide anything. It forwards to the Controller,
+> over mutual TLS, on a network nothing else can reach."
+
+Watch the **Controller pane**:
+
+```
+Trust score computed | score=59/100 | posture=40/60 | suricata=12/25 | ml=7/15
+APPROVED             | acl=LIMITED  | hosts=resource-node | ttl=120s
+```
+
+> "Posture 40 of 60, because this laptop reports no disk encryption and no
+> antivirus — the score is reading real posture. The detectors have no
+> telemetry for this device yet, so they get half credit: 'we did not look'
+> is penalised, but it is not evidence of attack."
+
+Back in the Gateway pane:
+
+```
+Firewall rule inserted | src_ip=172.18.0.1 | port=443
+SESSION OPEN           | acl=LIMITED | ttl=120s
+```
+
+**Show the hole that just appeared:**
+
+```bash
+docker exec sdp-gateway nft list table inet sdp_spa
+```
+
+> "One rule, pinned to this source address, with a lease. Nobody else gained
+> anything."
+
+---
+
+## Act 4 — The secure connection
+
+```bash
+./demo/ztna connect
+```
+
+> "SPA_OK only proved a pinhole exists. This proves access."
+
+```
+Data path established | tls=TLSv1.3 | cipher=TLS_AES_256_GCM_SHA384 | peer_cn=sdp-gateway
+HTTP 200 in 5.8 ms
+body  {"resource": "resource-node", "subject": "4e3dd94d-..."}
+```
+
+Gateway pane: `PROXY FORWARD ... resource=resource-node:7443`.
+
+> "The Gateway terminated that TLS, inspected the request, and opened a
+> *separate* connection to the resource. It is an inspection point, not a
+> tunnel. And the resource validated the token itself — it has no route to
+> the IDP, so it checks the signature offline. It does not trust the
+> Gateway."
+
+Optionally show the claims the resource verified:
+
+```bash
+./demo/ztna whoami
+```
+
+---
+
+## Act 5 — The device is compromised, mid-session
+
+This is the beat that separates this from a VPN.
 
 > "Nothing about the user is going to change. Same password, same credential,
-> the TPM still holds the key, the posture bits are still attested. The only
-> thing that changes is what the detectors see."
+> the TPM still holds the key, the posture bits are still attested. Only the
+> evidence about the device changes."
 
-The flip prints the detector's own output — 100% of flows labelled an attack,
-autoencoder agreeing, plus a critical Suricata signature. Then:
+```bash
+python3 demo/telemetry.py compromised
+```
 
-> "Re-evaluation runs every ten seconds. It re-scores every live session
-> against the evidence as it stands now, not as it stood at admission."
+The output is the detector's own, not typed in: 100% of flows labelled an
+attack, the autoencoder agreeing, plus a critical Suricata signature.
 
-Watch the pinhole count fall to 0, and read the reason out of the log:
+> "Re-evaluation runs every ten seconds, re-scoring every live session
+> against the evidence as it stands now — not as it stood at admission."
+
+Watch the Controller pane, then:
+
+```bash
+docker exec sdp-gateway nft list table inet sdp_spa
+```
+
+The pinhole is gone. The reason is in the log:
 
 ```
 SESSION CLOSED | reason=re-evaluation: trust=0; DENY by deny-untrusted-device
 Re-evaluation complete | checked=1 | revoked=1
 ```
 
-> "The client did nothing wrong and asked for nothing. Its access was
-> withdrawn because the evidence changed. That is the difference between zero
-> trust and authenticate-once."
+> "The client did nothing wrong and asked for nothing. Access was withdrawn
+> because the evidence changed."
 
-### 4 — Knock again, now quarantined · `./demo/step 4`
+**Prove it from the client side:**
 
-Same device, same credential, fresh knock.
-
-> "Watch the posture score. It does not drop."
-
-`posture: 40/60` is unchanged, and the score is still forced to 0:
-
-```
-QUARANTINED: critical IDS signature: ET MALWARE Cobalt Strike Beacon Observed
-             - score forced to 0 (was 40/100)
+```bash
+./demo/ztna connect
 ```
 
-This is the design argument, and it is worth stating plainly:
+It fails now — same token, same session, no route.
+
+---
+
+## Act 6 — Knock again, now quarantined
+
+```bash
+./demo/ztna knock
+```
+
+Client side: silence, not a rejection.
+
+> "Note what the client sees. Not 'denied' — nothing. An unaccepted knock is
+> dropped, so an attacker learns nothing from being turned away, not even
+> that anything is here. Why it was refused is on the Controller, not on the
+> wire."
+
+Controller pane:
+
+```
+trust | posture:  40/60
+trust | suricata: 0/25   (5 alert(s) incl. critical)
+trust | ml:       0/15   (anomaly_rate=1.00, top=Web attack)
+trust | QUARANTINED: critical IDS signature: ET MALWARE Cobalt Strike Beacon
+        Observed - score forced to 0 (was 40/100)
+```
+
+> "Watch the posture line. It did **not** drop — it is still 40 of 60,
+> exactly what it was when this device was let in. The score was not averaged
+> down, it was overridden."
+
+The design argument, worth stating in full:
 
 > "Posture answers 'is this device well configured?'. The detectors answer
 > 'is it compromised right now?'. A weighted sum lets a confident answer to
-> the first bury the second — a fully managed laptop scored 60 with an active
-> C2 beacon, which cleared the bar. So confirmed compromise is not a
-> deduction, it is a disqualifier. Being well patched is no defence against
-> already being owned."
+> the first bury the second — posture is 60 of 100, so a fully managed laptop
+> scored 60 with an active C2 beacon, which clears the bar to get in. So
+> confirmed compromise is not a deduction, it is a disqualifier. Being well
+> patched is no defence against already being owned."
 
-Also note what the client saw: silence, not a rejection. An attacker learns
-nothing from being refused.
+**Reset:**
 
-### 5 — Reset · `./demo/step 5`
+```bash
+python3 demo/telemetry.py clean
+```
 
-Back to clean. Run it before anyone else tries the demo.
+---
 
-### 6 — The policy engine · `./demo/step 6`
+## Optional closers
 
-Optional, and good if they ask about policy rather than cryptography. Eight
-scenarios, deny-wins, implicit deny. Edit `SDP_CONTROLLER/policies.yaml` in
-another pane, save, re-run — the decision changes with **no restart**,
-because the Controller reloads on mtime.
+**Fail closed.** Ask what happens if the Controller dies:
+
+```bash
+docker compose stop sdp-controller
+./demo/ztna knock          # denied: "no decision from the Controller"
+docker compose up -d sdp-controller
+```
+
+> "The Gateway has no local policy engine left to fall back on. No decision
+> is not an approval."
+
+**Policy, edited live.** Open `SDP_CONTROLLER/policies.yaml` in another pane,
+change a threshold, save, and re-run — the Controller reloads on mtime, no
+restart:
+
+```bash
+cd SDP_CONTROLLER && python3 demo.py
+```
 
 ---
 
 ## Questions you should expect
 
-**"Is the ML real, or did you hard-code those numbers?"**
+**"Is the ML real, or are those numbers hard-coded?"**
 Real. `MODELS/trained/` holds the LightGBM and autoencoder from the final
-evaluation run. `SDP_CONTROLLER/tests/test_detector.py` replays 1,109 real
-flows and requires this code to reproduce what the real LightGBM and real
-PyTorch models produced for those same rows — probabilities agree within
-1e-6, anomaly flags disagree on 0 of 1,109. Offer to run it.
+evaluation run. Offer to run the proof:
 
-**"Why is there no torch in the Controller?"**
-Deliberate. The Controller is the service whose compromise decides access and
-whose job is to answer in milliseconds. The autoencoder is six Linear layers,
-20 KB of weights, so it runs as numpy matmuls and the LightGBM trees are
-walked directly. The test above is what makes that safe.
+```bash
+cd SDP_CONTROLLER && python3 -m pytest tests/test_detector.py -q
+```
+
+It replays 1,109 real flows and requires this code to reproduce what the real
+LightGBM and real PyTorch models produced for those same rows — probabilities
+within 1e-6, anomaly flags disagreeing on 0 of 1,109.
+
+**"Why is there no PyTorch in the Controller?"**
+Deliberate. It is the service whose compromise decides access and whose job
+is to answer in milliseconds. The autoencoder is six Linear layers, 20 KB of
+weights, so it runs as numpy matmuls and the LightGBM trees are walked
+directly. The test above is what makes that safe.
 
 **"What is the detection accuracy?"**
-Per category, measured, including the weak rows: Normal 0% false positives,
-Flood 99%, Brute force 97%, C2 97%, Web attack 97%, **Scan/Recon 28%,
-Spoofing/MITM 46%**, and Ransomware — which is *not* in the training
-categories — caught 100% by the autoencoder. Volunteer the weak two before
-they find them; it is the difference between a result and a sales pitch.
-
-**"Could the Gateway just be told to allow everything?"**
-It has no local policy engine left. If the Controller is unreachable, every
-knock is DENIED. You can demonstrate it: `docker compose stop sdp-controller`
-and run beat 2.
+Per category, measured: Normal 0% false positives, Flood 99%, Brute force
+97%, C2 97%, Web attack 97%, **Scan/Recon 28%, Spoofing/MITM 46%**, and
+Ransomware — *not* in the training categories — caught 100% by the
+autoencoder. Volunteer the weak two before they find them.
 
 **"What is not finished?"**
-Live feature extraction — the detector scores recorded flows, not traffic it
+Live feature extraction: the detector scores recorded flows, not traffic it
 captured. Suricata is not inline here. The TPM is a software one, so
-attestation is `pinned-ak` rather than vendor-rooted. Say these before you
-are asked.
+attestation is `pinned-ak` rather than vendor-rooted. Say these unprompted.
 
 ---
 
@@ -211,14 +360,16 @@ are asked.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Client aborts at `[1/6]` | no `CLIENT_USERNAME`/`CLIENT_PASSWORD` in `.env` | set them, or pass `--username/--password` |
-| `TPM ATTESTATION FAILED` | swtpm is not running | restart it (see above), check `ss -ltn \| grep 2321` |
-| Knock sent, no reply | Controller is down, or telemetry says compromised | `docker compose ps`; `python3 demo/telemetry.py show` |
-| `TLS handshake timed out` after `SPA_OK` | the lease expired before the request | the TTL is `CONTROLLER_TTL_SECONDS` in `.env`, 120s for the demo |
-| Beat 3 never revokes | telemetry did not change, or the Controller did not reload | `python3 demo/telemetry.py show`, then check the Controller pane for `Telemetry snapshot loaded` |
+| `No session. Run: ztna login` | state file cleared | `./demo/ztna login` |
+| Login aborts at first factor | no credentials | `CLIENT_USERNAME`/`CLIENT_PASSWORD` in `.env` |
+| `no hardware trust anchor` | swtpm not running | restart it; `ss -ltn \| grep 2321` |
+| Knock gets no reply | denied, or Controller down | read the Controller pane; `docker compose ps` |
+| `connect` fails after `SPA_OK` | lease expired or revoked | `./demo/ztna knock` again; TTL is `CONTROLLER_TTL_SECONDS` |
+| Edited a file, Controller ignores it | — | should not happen: the inputs are a directory mount, so a replaced file is picked up. If it recurs, `docker compose up -d --force-recreate sdp-controller` |
 
-Worst case, the whole thing resets in under a minute:
+Full reset in under a minute:
 
 ```bash
-docker compose down && docker compose up -d && python3 demo/telemetry.py clean
+docker compose down && docker compose up -d
+python3 demo/telemetry.py clean && ./demo/ztna logout
 ```

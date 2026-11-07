@@ -49,3 +49,6 @@ Thumbs.db
 # Shared project docs belong in README.md.
 CLAUDE.md
 CLAUDE2.md
+
+# Stepwise demo client session: holds live bearer tokens.
+demo/.session.json
