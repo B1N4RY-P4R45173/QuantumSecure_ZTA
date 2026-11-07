@@ -64,6 +64,29 @@ def issue(ca_key: ec.EllipticCurvePrivateKey, ca_cert: x509.Certificate,
         .not_valid_after(now + datetime.timedelta(days=CERT_VALID_DAYS))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.ExtendedKeyUsage([usage]), critical=False)
+        # Key identifiers. RFC 5280 says a CA certificate MUST carry a
+        # Subject Key Identifier and an end-entity certificate SHOULD carry
+        # an Authority Key Identifier naming the key that signed it.
+        #
+        # Leaving them out is not cosmetic. OpenSSL 3.x refuses a chain whose
+        # leaf has no AKI, so a certificate issued here verified on Linux and
+        # was rejected by the Windows client with
+        #
+        #     did not verify against ca.crt: Missing Authority Key Identifier
+        #
+        # after the handshake had already succeeded -- which reads like a
+        # trust problem with the CA rather than a missing extension.
+        #
+        # from_issuer_public_key derives the identifier from the CA's key
+        # rather than copying the CA certificate's own SKI extension, so this
+        # also works against a CA issued before that extension was added. An
+        # existing deployment only has to re-issue its leaf certificates, not
+        # rebuild its CA and redistribute trust.
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                       critical=False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
+            critical=False)
     )
     if hosts:
         builder = builder.add_extension(_san(hosts), critical=False)

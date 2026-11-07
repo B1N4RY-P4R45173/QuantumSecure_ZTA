@@ -53,6 +53,13 @@ def create(ca_dir: str | Path, common_name: str = "ZTNA-SDP Project CA") -> x509
             digital_signature=False, content_commitment=False, key_encipherment=False,
             data_encipherment=False, key_agreement=False, key_cert_sign=True, crl_sign=True,
             encipher_only=False, decipher_only=False), critical=True)
+        # RFC 5280 requires this on a CA certificate, and it is what the
+        # Authority Key Identifier in every certificate this CA issues points
+        # back at. A CA created before this line still works -- leaf certs
+        # derive the identifier from the CA's public key rather than reading
+        # it here -- but a new one should be correct.
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                       critical=False)
         .sign(key, hashes.SHA256())
     )
 
