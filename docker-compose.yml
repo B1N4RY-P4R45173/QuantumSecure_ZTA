@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # Standalone Identity Provider. Deliberately NOT on data-plane-net: the

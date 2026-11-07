@@ -251,10 +251,17 @@ class PolicyEngine:
         An empty list means every session still passes.
 
         It re-reads policy and telemetry but NOT posture: posture arrives
-        attested inside a knock ticket and there is no honest way to re-derive
-        it between knocks, so each session carries its admission-time value.
-        A device whose posture decays is caught at its next knock, not
-        mid-session. That gap is real and worth stating rather than hiding.
+        attested inside a knock ticket and there is no honest way to
+        re-derive it between knocks, so each session is re-scored against
+        its admission-time value.
+
+        That gap is bounded by one lease. Nothing renews a lease -
+        expires_at is set once when the session opens - so keeping access
+        past the TTL (30s by default) requires a fresh knock carrying a
+        fresh attested ticket. A device whose posture decays therefore
+        loses access within one TTL, not at some indefinite later point.
+        test_posture_cannot_outlive_its_lease pins that, because the bound
+        comes from an API the SessionTable deliberately does not have.
         """
         if not sessions:
             return []

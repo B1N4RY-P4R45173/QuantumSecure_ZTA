@@ -152,30 +152,80 @@ def test_detector_evidence_revokes_a_device_with_partial_posture(tmp_path):
     assert TABLE.active() == []
 
 
-def test_full_posture_outweighs_both_detectors(tmp_path):
-    """A documented WEAKNESS of the current weighting, pinned so a change to
-    it is a deliberate decision rather than an accident.
+def test_a_quarantine_tripwire_beats_perfect_posture(tmp_path):
+    """Confirmed compromise denies a device however well it is managed.
 
-    Posture is worth 60 of 100. Suricata and ML together are worth 40. So a
-    fully attested device scores 60 even with a critical C2 signature AND
-    every flow classified malicious - above allow-employee-standard's
-    threshold of 50, and it keeps its access.
+    This pins the fix to a real hole. Posture is worth 60 of 100 and the two
+    detectors together only 40, so under a pure weighted sum a fully
+    attested device scored 60 even with a critical C2 signature AND every
+    flow classified malicious. 60 clears allow-employee-standard's
+    threshold of 50, so it kept its access: the detection pipeline, which is
+    the research contribution of this project, could not by itself deny a
+    healthy device.
 
-    In other words the detection pipeline, which is the research
-    contribution of this project, cannot by itself deny a healthy device.
-    Whether that is right is a weighting question, and it is exactly what a
-    sensitivity analysis of the trust weights needs to answer. It is
-    asserted here so the behaviour is visible rather than surprising.
+    The sum was not rebalanced to fix it. Posture answers "is this device
+    well configured?" and the detectors answer "is it compromised right
+    now?"; no choice of weights stops a confident answer to the first from
+    burying the second. Instead trust_scorer raises a disqualifier, and the
+    score is forced to 0.
+
+    The component scores must survive in the breakdown: an operator who
+    sees only 0 cannot tell a quarantined machine from an unattested one,
+    and would "fix" a correctly-configured laptop by re-imaging it.
     """
     s = _open(sid="sid-attested", ip=CLEAN_IP, posture=HEALTHY)
 
     telemetry = _flagged_telemetry(tmp_path / "telemetry.json", CLEAN_IP)
     controller = PolicyController(telemetry_path=str(telemetry))
-    passes, score, _reason = controller._rescore(s, *controller._current_inputs())
+    passes, score, reason = controller._rescore(s, *controller._current_inputs())
 
-    assert score == 60, f"expected 60 (posture 60 + suricata 0 + ml 0), got {score}"
-    assert passes, "the weighting changed - re-check the sensitivity analysis"
-    assert controller.reevaluate() == []
+    assert score == 0, f"a quarantined device must score 0, got {score}"
+    assert not passes, "a device with an active C2 beacon kept its access"
+
+    # And the live session is actually torn down, not merely scored badly.
+    assert controller.reevaluate() != [], "the compromised session survived review"
+
+
+def test_quarantine_keeps_the_posture_evidence_visible(tmp_path):
+    """The 0 has to be explainable, or the denial gets misdiagnosed."""
+    from SDP_CONTROLLER import trust_scorer
+
+    flagged = json.loads((_flagged_telemetry(
+        tmp_path / "telemetry.json", CLEAN_IP)).read_text())[CLEAN_IP]
+    breakdown = trust_scorer.compute_trust_score(
+        HEALTHY, flagged.get("suricata"), flagged.get("ml"))
+
+    assert breakdown.score == 0
+    assert breakdown.disqualified, "no reason recorded for the quarantine"
+    assert breakdown.posture_score == 60, (
+        "posture must stay visible at its real value, not be zeroed too")
+    assert any("QUARANTINED" in n for n in breakdown.notes)
+
+
+def test_a_high_severity_alert_is_scored_not_quarantined(tmp_path):
+    """The tripwire stays narrow: only the critical class disqualifies.
+
+    Without this, every medium/high signature becomes a lockout and the
+    graded score stops meaning anything.
+    """
+    from SDP_CONTROLLER import trust_scorer
+
+    high = {"alert_count": 1, "max_severity": 2,
+            "signatures": ["ET GEO Traffic from Sanctioned Region"]}
+    breakdown = trust_scorer.compute_trust_score(HEALTHY, high, None)
+
+    assert breakdown.disqualified is None
+    assert breakdown.score > 0, "a high-severity alert must still be graded"
+
+
+def test_absent_telemetry_never_quarantines():
+    """"We did not look" is not evidence of compromise - it already costs
+    half credit on both detectors, which is the correct penalty."""
+    from SDP_CONTROLLER import trust_scorer
+
+    breakdown = trust_scorer.compute_trust_score(HEALTHY, None, None)
+    assert breakdown.disqualified is None
+    assert breakdown.score > 0
 
 
 def test_an_unreadable_policy_revokes_rather_than_coasting(tmp_path):
@@ -245,3 +295,51 @@ def test_the_reaper_is_left_to_own_expired_sessions():
     _open(sid="sid-expired", ttl=-1)
     revoked = PolicyController().reevaluate()
     assert revoked == [], "re-evaluation grabbed a session the reaper owns"
+
+
+# --------------------------------------------------------------------------- #
+# How long stale posture can survive                                          #
+# --------------------------------------------------------------------------- #
+
+def test_posture_cannot_outlive_its_lease():
+    """Bounds the one gap re-evaluation genuinely cannot close.
+
+    Posture arrives signed inside a knock ticket, so it cannot honestly be
+    re-derived between knocks - a live session is re-scored against its
+    admission-time posture. The open question is how long a device whose
+    posture has since decayed can keep trading on the old value.
+
+    The answer is one lease, because nothing renews a lease. expires_at is
+    set once in open() and there is no extend/renew/touch path, so holding
+    access past the TTL takes a brand-new knock, which takes a brand-new
+    attested ticket. That is the structural reason the gap is bounded by the
+    TTL rather than unbounded, and it is worth a test because the bound is a
+    property of what the code does NOT have - it would be lost silently the
+    day somebody adds session renewal as a convenience.
+    """
+    import inspect
+
+    from firewall import sessions as sessions_mod
+
+    s = _open(sid="sid-lease", ip=CLEAN_IP, posture=HEALTHY, ttl=300)
+    try:
+        before = s.expires_at
+
+        # Re-scoring a session must never push its deadline out.
+        PolicyController().reevaluate()
+        assert s.expires_at == before, "re-evaluation extended the lease"
+
+        # And no API exists to extend it.
+        for name in ("extend", "renew", "touch", "refresh"):
+            assert not hasattr(TABLE, name), (
+                f"SessionTable.{name}() would let posture outlive its "
+                f"attestation - re-check the re-evaluation argument")
+
+        # expires_at is assigned exactly once, at open().
+        src = inspect.getsource(sessions_mod)
+        writes = src.count("expires_at=") + src.count("expires_at =")
+        assert writes == 1, (
+            f"expires_at is written in {writes} places; a lease may now be "
+            f"renewable, which would unbound the posture gap")
+    finally:
+        TABLE.close(s.session_id, "test teardown")

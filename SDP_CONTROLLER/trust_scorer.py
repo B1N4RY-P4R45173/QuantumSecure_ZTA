@@ -46,6 +46,36 @@ assert TOTAL_MAX == 100
 
 
 # ---------------------------------------------------------------------------
+# Quarantine tripwires
+# ---------------------------------------------------------------------------
+# Posture and the detectors answer two different questions. Posture asks
+# "is this device well configured?" — managed, patched, encrypted. The
+# detectors ask "is this device behaving like it is compromised right now?"
+# A weighted sum lets a good answer to the first bury a bad answer to the
+# second: a fully attested laptop scores 60/60 on posture, and 60 clears
+# both the block bar (40) and the internal-access bar (50) even with both
+# detectors at zero. A managed device running a Cobalt Strike beacon kept
+# its access.
+#
+# Confirmed-compromise evidence is therefore a disqualifier, not a
+# deduction. A device that trips either wire below scores 0 and is denied
+# regardless of how well it is managed, which is also what a real
+# quarantine does — being well patched is not a defence against already
+# being owned.
+#
+# Deliberately narrow, because the cost of a false positive here is a
+# locked-out user, not a smaller grant:
+#   * Suricata severity 1 is the "critical" class, and the signatures that
+#     carry it (ET MALWARE, network-trojan) assert an active infection
+#     rather than reconnaissance against the host.
+#   * The ML wire needs a MAJORITY of observed flows classified malicious,
+#     so a single misclassified flow cannot quarantine a device. A rate
+#     this high is a sustained pattern, not a blip.
+CRITICAL_SEVERITY = 1
+ML_QUARANTINE_RATE = 0.5
+
+
+# ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
 
@@ -57,6 +87,8 @@ class TrustBreakdown:
     ml_score: int
     contributions: dict[str, Any]
     notes: list[str]
+    # None when nothing tripped; otherwise why the device is quarantined.
+    disqualified: str | None = None
 
 
 def _posture_score(signals: dict) -> tuple[int, dict[str, int]]:
@@ -109,6 +141,32 @@ def _ml_score(ml_summary: dict | None) -> tuple[int, str]:
     return pts, note
 
 
+def _disqualifier(suricata: dict | None, ml: dict | None) -> str | None:
+    """Name the tripwire this evidence crosses, or None.
+
+    Absent telemetry never disqualifies: "we did not look" is not evidence
+    of compromise. It already costs half credit on both detectors, which is
+    the right penalty for not knowing.
+    """
+    if suricata:
+        count = suricata.get("alert_count", 0) or 0
+        sev = suricata.get("max_severity")
+        if count and sev is not None and sev <= CRITICAL_SEVERITY:
+            sigs = suricata.get("signatures") or []
+            which = f": {sigs[0]}" if sigs else ""
+            return f"critical IDS signature{which}"
+
+    if ml:
+        rate = ml.get("anomaly_rate", 0.0) or 0.0
+        flows = ml.get("flow_count", 0) or 0
+        if flows and rate >= ML_QUARANTINE_RATE:
+            top = ml.get("top_class", "unknown")
+            return (f"{rate:.0%} of {flows} observed flow(s) classified "
+                    f"malicious (top={top})")
+
+    return None
+
+
 def compute_trust_score(
     signals: dict | None = None,
     suricata: dict | None = None,
@@ -125,12 +183,24 @@ def compute_trust_score(
         f"suricata: {s_score}/{SURICATA_MAX}   ({s_note})",
         f"ml:       {m_score}/{ML_MAX}   ({m_note})",
     ]
+
+    # A tripwire overrides the sum rather than adjusting it. The component
+    # scores stay in the notes on purpose: an operator needs to see that
+    # posture was perfect AND that the device was quarantined anyway, or the
+    # denial looks like a posture failure and gets "fixed" by re-imaging a
+    # machine that was never misconfigured.
+    disqualified = _disqualifier(suricata, ml)
+    if disqualified is not None:
+        notes.append(f"QUARANTINED: {disqualified} - score forced to 0 "
+                     f"(was {total}/{TOTAL_MAX})")
+        total = 0
     contrib = {
         "posture": p_contrib,
         "suricata": {"score": s_score, "raw": suricata},
         "ml": {"score": m_score, "raw": ml},
     }
-    return TrustBreakdown(total, p_score, s_score, m_score, contrib, notes)
+    return TrustBreakdown(total, p_score, s_score, m_score, contrib, notes,
+                          disqualified)
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +267,10 @@ def enrich_request(request: dict, telemetry: dict[str, dict] | None = None) -> d
         "ml":       breakdown.ml_score,
         "notes":    breakdown.notes,
         "detail":   breakdown.contributions,
+        # Carried separately from the score so a caller can say WHY a
+        # quarantined device was denied. A bare 0 is indistinguishable from
+        # a device with no posture at all.
+        "disqualified": breakdown.disqualified,
     }
     new_req = dict(request)
     new_req["device"] = device
