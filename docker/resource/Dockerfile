@@ -39,7 +39,11 @@ USER resource
 
 EXPOSE 7443
 
+# A script, not a one-liner: the node listens in plaintext on a single host
+# and over mutual TLS when it is split onto its own machine, and the probe
+# has to follow. The old inline HTTP probe reported `unhealthy` forever
+# against the TLS listener while the node was serving the Gateway fine.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:7443/healthz').status==200 else 1)"]
+    CMD ["python", "healthcheck.py"]
 
 CMD ["python", "main.py"]

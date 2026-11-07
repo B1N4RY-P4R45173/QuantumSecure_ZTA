@@ -200,10 +200,19 @@ def _issue_resource_cert(args: argparse.Namespace) -> int:
     hosts = RESOURCE_SAN_HOSTS + extra
     cert_utils.issue(*ca, common_name="resource-node", kind="server", out_dir=bundle,
                      hosts=hosts, file_stem="resource")
+    # The container's own /healthz probe is behind the same mutual TLS as
+    # everything else, so it needs a CLIENT certificate. resource.crt cannot
+    # serve: its extended-key-usage says server, and a TLS server rejects one
+    # offered as a client certificate. Minting this small identity is what
+    # keeps a Gateway's private key off the resource host, which would
+    # otherwise be the only other way to probe the port.
+    cert_utils.issue(*ca, common_name="resource-node-health", kind="client",
+                     out_dir=bundle, file_stem="health")
     shutil.copyfile(Path(settings.idp_ca_dir) / root_ca.CA_CERT_NAME,
                     bundle / root_ca.CA_CERT_NAME)
     print(f"issued the resource node's certificate -> {bundle}/")
     print(f"  resource.crt, resource.key  valid for {', '.join(hosts)}")
+    print("  health.crt, health.key      the container's own /healthz probe")
     print("  ca.crt                      what it checks a Gateway's certificate against")
     print("Copy that folder to the resource machine as resource-node/certs/pki/ .")
     print("Then set RESOURCE_TLS=1 on BOTH sides: the resource serves TLS and")
