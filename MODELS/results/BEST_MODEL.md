@@ -1,11 +1,11 @@
-# Phase 1 decision: best known-attack model for the IoT gateway (TRUST Lab)
+# Stage 1 decision: best known-attack model for the IoT gateway (TRUST Lab)
 
 Decided 2026-10-31 (CHECKLIST 1C.7). All numbers come from the runs listed in section 6.
 
 ## 0. UPDATE 2026-10-31: the chosen model is now LightGBM BAL_MS **without the 6 bulk features**
 
 The bulk features leak the CICFlowMeter version in TRUST Lab (section 7), so the model was retrained without them, on TRUST Lab only.
-**Detection did not get worse**, so the leak did not inflate the Phase 1 numbers. The other features already separate those classes.
+**Detection did not get worse**, so the leak did not inflate the Stage 1 numbers. The other features already separate those classes.
 
 | TEST_ORIGINAL | LGBM BAL_MS, 70 features (old) | **LGBM BAL_MS, 64 features, no bulk (CHOSEN)** | XGB BAL_MS, no bulk (runner-up) |
 |---|---|---|---|
@@ -108,7 +108,7 @@ The script's automatic pick was **ENS** (BAL_MS + plain LightGBM safety net, thr
 
 Earlier context: `MODELS/results/COMPARISON.md` (5-model comparison, window 32) and `MODELS/results/SOLO_TRAINING.md` (first solo-attack experiment).
 
-## 7. Limits (read before Phase 4)
+## 7. Limits (read before Stage 4)
 
 - ⚠ **DATA LEAK FOUND 2026-10-31: the 6 bulk features.** TRUST Lab was made with two CICFlowMeter versions:
   - Benign, DDoS, DoS, PortScan and Slowloris come from the old version, whose 6 bulk features
@@ -118,14 +118,14 @@ Earlier context: `MODELS/results/COMPARISON.md` (5-model comparison, window 32) 
   So "bulk ≠ 0" fingerprints those 10 attack classes, and BAL_MS uses these features (400–760 splits each).
 
   Consequences:
-  1. The Phase 1 numbers for the single-flow attacks are probably **too optimistic**.
+  1. The Stage 1 numbers for the single-flow attacks are probably **too optimistic**.
   2. On CIC-IDS2017, where the Java CICFlowMeter 4.0 fills bulk for 63% of *normal* flows (in the sample), many false alarms are expected.
 
   **Fix:** retrain on TRUST Lab without the 6 bulk features, then re-check this choice.
   Evidence: `head`+`awk` scan of `MODELS/data/extracted/*.csv` (first 50k–200k rows per class) and the class headers (CWE = old version, CWR = new).
 
-- **Tested only on TRUST Lab** (known attacks, the same network it was trained on). On CIC-IDS2017 Wednesday, the older SW-XGBoost caught only 0.06–31% of attacks without retraining, because the flow tool and features differ. Phase 3 (CICFlowMeter v4 flows) must come before any fair test on CIC-IDS2017.
-- **Known attacks only.** Unknown attacks are the job of the Phase 5 autoencoder.
+- **Tested only on TRUST Lab** (known attacks, the same network it was trained on). On CIC-IDS2017 Wednesday, the older SW-XGBoost caught only 0.06–31% of attacks without retraining, because the flow tool and features differ. Stage 3 (CICFlowMeter v4 flows) must come before any fair test on CIC-IDS2017.
+- **Known attacks only.** Unknown attacks are the job of the Stage 5 autoencoder.
 - **Classes are split into "single-flow" and "time-series" by a rule set in `window_tradeoff.py`:**
   - single-flow: Exploitation, BufferOverflow, WebBased, API, TLSSSL, C2Beaconing, Exfiltration
   - time-series: DDoS, DoS, Slowloris, PortScan, Bruteforce, DNS, MITM, Evasion

@@ -10,7 +10,35 @@ Goal: find the best threat detector for an **IoT edge device**.
 
 ---
 
-## Phase 0 — Environment setup (PC 2)
+## Stage numbers here vs Phase numbers in the progress report
+
+This file is the **plan**, and its `Stage N` headings are plan steps. The
+results live in `MODELS/results/PROJECT_PROGRESS_REPORT.md`, whose `Phase N`
+headings describe **what was actually run**. The two drifted apart as the
+work went on, so the same number means different things in the two files —
+plan Stage 2 is Suricata setup, report Phase 2 is the CIC-IDS2017 evaluation.
+They are deliberately not renumbered to match: the item IDs below (`1C.7`,
+`3.2`, `6.1`, …) are cross-referenced from `CLAUDE.md`, `BEST_MODEL.md` and
+the report itself, and renaming them would break those references for the
+sake of cosmetics.
+
+| Plan stage (this file) | Report phase (results) |
+|---|---|
+| Stage 0 — Environment setup | — infrastructure, no results phase |
+| Stage 1 — Known attacks on TRUST Lab | Phase 1 — TRUST Lab (same work) |
+| Stage 2 — Suricata setup and requirements | folded into Phase 4 (Suricata inline on Edge-IIoTset) |
+| Stage 3 — CICFlowMeter v4 flows for CIC-IDS2017 | Phase 2 — CIC-IDS2017 as an unseen test set (the flow-building half) |
+| Stage 4 — Best SW model vs Suricata on CIC-IDS2017 | Phase 2 — same, the evaluation half |
+| Stage 5 — Autoencoder for unknown attacks | Phase 5 — site calibration + autoencoder |
+| Stage 6 — Final system and report | Phase 6 — quarantine rule tuning |
+| — not planned | Phase 3 — CICIoT2023 training, added after this plan was written |
+
+So a bare "Phase 5" is ambiguous and a bare "Stage 5" is not. Cite stages
+when pointing at this plan and phases when pointing at results.
+
+---
+
+## Stage 0 — Environment setup (PC 2)
 
 - [x] 0.1 Check that the GPUs work with torch. Evidence: `runs/gpu_check_20261030_205158/` (2× A2, CUDA OK)
 - [x] 0.2 Write down the packages in each venv (CLAUDE.md section 5)
@@ -21,7 +49,7 @@ Goal: find the best threat detector for an **IoT edge device**.
 
 ---
 
-## Phase 1 — Known attacks on TRUST Lab: train, score, pick the best model
+## Stage 1 — Known attacks on TRUST Lab: train, score, pick the best model
 
 ### 1A. Baseline models (one flow, no time)
 - [x] 1A.1 Preprocess TRUST Lab (time-ordered split: train / validation / test). `MODELS/preprocess.py`
@@ -64,7 +92,7 @@ Goal: find the best threat detector for an **IoT edge device**.
       `runs/sw_xgb_balanced_nobulk_20261031_121457/`, `runs/live_latency_20261031_122954/`. Detection unchanged
       (LGBM BAL_MS hidden 98.01%, series 91.91%, false alarms 0.34%), 248 µs/flow. 1C.7 re-confirmed: LGBM BAL_MS (no bulk).
       (window_tradeoff --drop-bulk not run; optional)
-- [x] 1C.7 **Final choice in Phase 1:** best SW model (XGB or LGBM) + window size. Write the reason in `MODELS/results/BEST_MODEL.md`
+- [x] 1C.7 **Final choice in Stage 1:** best SW model (XGB or LGBM) + window size. Write the reason in `MODELS/results/BEST_MODEL.md`
       Chosen: **LightGBM BAL_MS, no bulk features** (64 flow features, windows 8+56 + deviation, solo training).
       Runner-up: XGBoost BAL_MS (fewer false alarms, 2x RAM, 10x slower per flow).
 
@@ -74,7 +102,7 @@ Goal: find the best threat detector for an **IoT edge device**.
 
 ---
 
-## Phase 2 — Suricata setup and requirements
+## Stage 2 — Suricata setup and requirements
 
 - [x] 2.1 Install Suricata + ET Open rules. Guide: `MODELS/Suricata/INSTALL.md`
 - [x] 2.2 Run Suricata on each CIC-IDS2017 day pcap. Evidence: `MODELS/Suricata/output/<Day>/suricata/`
@@ -85,7 +113,7 @@ Goal: find the best threat detector for an **IoT edge device**.
 
 ---
 
-## Phase 3 — CICFlowMeter v4 flows for CIC-IDS2017 (to match TRUST Lab)
+## Stage 3 — CICFlowMeter v4 flows for CIC-IDS2017 (to match TRUST Lab)
 
 Why: TRUST Lab flows were made with **CICFlowMeter v4**. The CIC-IDS2017 CSVs were made with **v3**.
 The features differ, so the TRUST Lab model cannot be tested fairly on the v3 CSVs.
@@ -111,14 +139,14 @@ The features differ, so the TRUST Lab model cannot be tested fairly on the v3 CS
       frame like TRUST Lab -> decision needed on which tool to use (see reply 2026-10-31).
       DECIDED (user, option A): Python cicflowmeter + TRUST Lab rules. Script `MODELS/Suricata/cicids_pyflows.py`
       (cfm-py) for Tue/Thu/Fri; Wednesday = `DataSet/wed_py/wed_py.csv`. Java flows kept only as a reference.
-      Labelling + evaluation: `MODELS/Suricata/cicids_week_eval.py` (covers 3.5, 3.6 and Phase 4). (written, not run yet)
+      Labelling + evaluation: `MODELS/Suricata/cicids_week_eval.py` (covers 3.5, 3.6 and Stage 4). (written, not run yet)
 - [~] 3.5 Label the v4 flows using the attack time schedule / 5-tuple from the v3 labelled CSVs
 - [ ] 3.6 Sanity check for each day: flow count, attack count per label, share of unmatched flows
 - [ ] 3.7 Save as `<Day>_v4_labelled.parquet` with the same columns as TRUST Lab
 
 ---
 
-## Phase 4 — Best SW model vs Suricata on CIC-IDS2017 (Tuesday to Friday)
+## Stage 4 — Best SW model vs Suricata on CIC-IDS2017 (Tuesday to Friday)
 
 Decision (user, 2026-10-31): **NO retraining. CIC-IDS2017 is test data only**, new to both detectors.
 Detectors in each test:
@@ -128,7 +156,7 @@ Detectors in each test:
 Scored as attack vs normal + detection rate per CIC-IDS label (no class mapping needed, since the model is not retrained).
 
 - [~] 4.1 Wednesday comparison. Done with Python-cicflowmeter flows: `MODELS/Suricata/output/Wednesday/v4/RESULTS_V4.md`.
-      ⚠ The TRUST Lab model detected only ~0.06% here, because of the feature/tool mismatch. Redo it with the Phase 3 flows.
+      ⚠ The TRUST Lab model detected only ~0.06% here, because of the feature/tool mismatch. Redo it with the Stage 3 flows.
 - [ ] 4.2 Tuesday: separate metrics table
 - [x] 4.3 Wednesday: separate metrics table (redo). Evidence: `runs/cicids_week_eval_20261031_222731/WEEK_RESULTS.md`.
       BAL_MS (TRUST Lab only) 0.13% detection / 5.04% false alarms; FLAT 4.87% / 10.07%; Suricata ALL 91.15% / 12.76%;
@@ -149,14 +177,14 @@ Scored as attack vs normal + detection rate per CIC-IDS label (no class mapping 
 
 ---
 
-## Phase 5 — Autoencoder for unknown (zero-day) attacks
+## Stage 5 — Autoencoder for unknown (zero-day) attacks
 
 Idea: train only on **normal** traffic, so the autoencoder learns to rebuild normal flows well (small reconstruction error).
 An attack flow looks different, so its **reconstruction error is higher**.
 If the error is above a **threshold**, the flow is flagged as an attack.
 
 ### 5A. Data
-- [ ] 5A.1 Training data = TRUST Lab **benign flows only** (time-ordered, same split as Phase 1)
+- [ ] 5A.1 Training data = TRUST Lab **benign flows only** (time-ordered, same split as Stage 1)
 - [ ] 5A.2 Validation data = benign flows only (used to set the threshold)
 - [ ] 5A.3 Test data = benign + attacks
 - [ ] 5A.4 Unknown-attack test: **leave-one-attack-family-out**. The attack family is never seen in training,
@@ -178,12 +206,12 @@ If the error is above a **threshold**, the flow is flagged as an attack.
 - [ ] 5D.1 Detection rate per attack family (especially the left-out "unknown" families)
 - [ ] 5D.2 False alarm rate, ROC-AUC, PR-AUC
 - [ ] 5D.3 Latency per flow and peak RAM (IoT fitness)
-- [ ] 5D.4 Optional: test on CIC-IDS2017 v4 flows (Phase 3) as a completely new network
+- [ ] 5D.4 Optional: test on CIC-IDS2017 v4 flows (Stage 3) as a completely new network
 - [ ] 5D.5 Compare it with the SW model and Suricata on unknown attacks
 
 ---
 
-## Phase 6 — Final system and report
+## Stage 6 — Final system and report
 
 - [ ] 6.1 Proposed design: SW model (known attacks) + autoencoder (unknown attacks) + Suricata (signatures).
       Explain how each one feeds the trust score in `SDP_CONTROLLER/trust_scorer.py`

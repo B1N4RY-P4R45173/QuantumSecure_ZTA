@@ -460,7 +460,7 @@ This is CHECKLIST task **6.1** ("explain how each one feeds the trust score in `
 7. **Drift handling:** retrain calibration/AE when normal traffic changes.
 8. **Partial quarantine** (keep-alive + re-verification allowed).
 9. CIC-IDS2017 Tue/Thu/Fri evaluation unfinished (old model; low priority now).
-10. CHECKLIST 1C.6 (IoT budget rule), 2.3 (Suricata requirements doc), Phase 5 on TRUST Lab: open.
+10. CHECKLIST 1C.6 (IoT budget rule), 2.3 (Suricata requirements doc), plan Stage 5 on TRUST Lab: open.
 
 ---
 
