@@ -117,3 +117,71 @@ def test_active_is_ordered_by_when_it_opened(table):
     time.sleep(0.01)
     _open(table, session_id="s-2", sid="b")
     assert [s.session_id for s in table.active()] == ["s-1", "s-2"]
+
+
+# --------------------------------------------------------------------------- #
+# A LIMITED grant has to be usable                                            #
+# --------------------------------------------------------------------------- #
+
+def test_a_limited_lease_opens_a_hole_the_client_can_actually_use(monkeypatch):
+    """Regression: LIMITED sessions were admitted and then silently blocked.
+
+    open() used to insert one rule per permitted host with that host as
+    `ip daddr`. Those rules sit on the INPUT hook, which only sees packets
+    addressed to the Gateway -- and the Gateway is a terminating proxy, so a
+    client addresses its own port 443, never the resource. The daddr could
+    not match, so the connection fell through to the default-deny underneath.
+
+    Observed end to end before the fix: the knock returned SPA_OK, the
+    session opened with acl=LIMITED hosts=resource-node, and the client's
+    TLS handshake to the proxy then timed out. Only FULL grants worked,
+    because an empty `hosts` wrote no daddr.
+
+    The destination restriction belongs to the inner leg, and the proxy
+    enforces it there (router.check_acl -> 403).
+    """
+    from firewall import rules, sessions
+
+    inserted = []
+    monkeypatch.setattr(rules, "allow",
+                        lambda *a, **k: inserted.append((a, k)) or True)
+    monkeypatch.setattr(rules, "revoke", lambda *a, **k: None)
+
+    table = sessions.SessionTable()
+    table.open(session_id="s-limited", sid="sid-limited", client_ip="10.0.0.21",
+               access_port=443, protocol="tcp", ttl_seconds=300,
+               acl="LIMITED", hosts=("resource-node",), posture_signals={})
+
+    assert len(inserted) == 1, (
+        f"expected exactly one inbound rule, got {len(inserted)}")
+    args, kwargs = inserted[0]
+    assert kwargs.get("dst_ip") is None, (
+        "the inbound pinhole must not be pinned to a destination; the input "
+        "hook never sees the resource as the destination")
+    assert "resource-node" not in args, (
+        "the permitted host leaked into the inbound rule")
+
+
+def test_closing_removes_the_same_rule_that_was_opened(monkeypatch):
+    """The revoke has to mirror the allow, or the hole outlives the session.
+
+    Revoking per-host while opening once meant nftables was asked to delete a
+    rule that was never inserted; it logged "revoke skipped - rule not found"
+    and left the real pinhole open.
+    """
+    from firewall import rules, sessions
+
+    opened, closed = [], []
+    monkeypatch.setattr(rules, "allow",
+                        lambda *a, **k: opened.append((a, k)) or True)
+    monkeypatch.setattr(rules, "revoke", lambda *a, **k: closed.append((a, k)))
+
+    table = sessions.SessionTable()
+    table.open(session_id="s-mirror", sid="sid-mirror", client_ip="10.0.0.21",
+               access_port=443, protocol="tcp", ttl_seconds=300,
+               acl="LIMITED", hosts=("resource-node",), posture_signals={})
+    table.close("s-mirror", "done")
+
+    assert len(opened) == len(closed) == 1
+    assert opened[0] == closed[0], (
+        f"opened {opened[0]} but revoked {closed[0]}")

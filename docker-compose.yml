@@ -115,6 +115,21 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_BIND_SERVICE
+    # Published for a client running natively on the host rather than in the
+    # sdp-client container. That is not a convenience: FIDO2 enrolment needs a
+    # TPM, the container has no access to one, so the only client that can
+    # complete the full flow is a native one -- and without these two ports it
+    # cannot reach the Gateway at all. The knock then goes unanswered and the
+    # client reports it as a refused knock, which looks like a policy denial
+    # rather than a missing route.
+    #
+    # Publishing them does not widen the attack surface the way it appears to:
+    # the SPA port is the one thing meant to be reachable by an unknown client,
+    # and 443 is default-DROP in the Gateway's own nftables table until a knock
+    # earns a lease, so it stays dark to anyone who has not authenticated.
+    ports:
+      - "62201:62201/udp"
+      - "443:443/tcp"
     volumes:
       # The bundle from `admin_cli.py issue-gateway-cert --id <id>` and
       # `issue-proxy-cert --id <id>`: ca.crt, gateway.crt/.key (IDP link),

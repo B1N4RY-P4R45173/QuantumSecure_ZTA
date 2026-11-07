@@ -81,9 +81,24 @@ class SessionTable:
         so the Controller can re-score this session later.
         """
         now = time.time()
-        targets: tuple[str | None, ...] = hosts or (None,)
-        for host in targets:
-            rules.allow(client_ip, access_port, protocol, dst_ip=host)
+        # One hole, pinned to the source and the port, with NO destination.
+        #
+        # It used to insert one rule per permitted host, with that host as
+        # `ip daddr`. That rule can never match. These rules sit on the input
+        # hook, which only sees packets addressed to the GATEWAY -- and the
+        # Gateway is a terminating proxy, so a client's connection is
+        # addressed to the Gateway's own port 443, never to the resource. The
+        # effect was that every LIMITED session was silently unusable: the
+        # knock was accepted, the lease opened, and the data connection was
+        # then dropped by the default-deny rule underneath. Only FULL grants
+        # worked, because `hosts` was empty and no daddr was written.
+        #
+        # Which destinations a session may reach is a property of the inner
+        # leg, and the proxy already enforces it: handler.py calls
+        # router.check_acl(session) before forwarding and answers 403
+        # DestinationRefused. That is the layer that can see the destination
+        # at all, because it is the layer that chooses it.
+        rules.allow(client_ip, access_port, protocol)
 
         session = Session(
             session_id=session_id, sid=sid, client_ip=client_ip,
@@ -104,8 +119,10 @@ class SessionTable:
             session = self._sessions.pop(session_id, None)
         if session is None:
             return None
-        for host in (session.hosts or (None,)):
-            rules.revoke(session.client_ip, session.access_port, session.protocol, dst_ip=host)
+        # Mirrors open(): one rule, no destination. Revoking per-host left
+        # the real rule in place and logged "revoke skipped - rule not found",
+        # so a closed session's pinhole outlived it.
+        rules.revoke(session.client_ip, session.access_port, session.protocol)
         session.closed_reason = reason
         status(log, "SESSION CLOSED", session=session_id[:8], sid=session.sid, reason=reason)
         return session
