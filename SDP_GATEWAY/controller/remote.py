@@ -61,6 +61,7 @@ CERTIFICATES
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import ssl
@@ -273,6 +274,22 @@ class RemoteController:
                 raise RuntimeError(
                     f"mTLS with the Controller failed - did it accept this Gateway's "
                     f"certificate? {reason}") from exc
+            # "Connection refused" means the host answered and declined: it
+            # is up, and nothing is listening on that port. On a two-machine
+            # deployment that is almost always GATEWAY_CONTROLLER_URL naming
+            # the wrong host -- typically this Gateway's own address, because
+            # AJAY_IP and ABHINAV_IP were filled in the wrong way round. The
+            # bare errno sends people to look at firewalls and routing, which
+            # is the one place the fault is not.
+            if isinstance(reason, ConnectionRefusedError) or \
+                    getattr(reason, "errno", None) == errno.ECONNREFUSED:
+                raise RuntimeError(
+                    f"Controller refused the connection at {self._url}. That host is "
+                    f"up but nothing is listening on that port, so this is a "
+                    f"configuration fault rather than a network one: check that "
+                    f"GATEWAY_CONTROLLER_URL names the machine the Controller "
+                    f"actually runs on (not this one), and that it is started "
+                    f"there.") from exc
             raise RuntimeError(f"Controller unreachable at {self._url}: {reason}") from exc
 
         try:

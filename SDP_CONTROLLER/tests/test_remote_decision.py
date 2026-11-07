@@ -199,3 +199,39 @@ def test_a_client_without_a_certificate_cannot_connect(controller):
 
 def test_healthz_answers_a_certificated_caller(remote):
     assert remote.check_healthz()["status"] == "ok"
+
+
+def test_a_refused_connection_names_the_configuration_not_the_network(monkeypatch):
+    """ECONNREFUSED on a two-machine deployment is almost never the network.
+
+    It means the host answered and declined: it is up, and nothing is
+    listening on that port. In practice that is GATEWAY_CONTROLLER_URL
+    naming the wrong machine -- usually the Gateway's own address, because
+    AJAY_IP and ABHINAV_IP were filled in the wrong way round.
+
+    Observed for real: a Gateway on 10.101.241.37 dialling
+    https://10.101.241.37:9500 and reporting "[Errno 111] Connection
+    refused", which sent the operator to check firewalls and routing. The
+    one place the fault was not.
+    """
+    import urllib.request
+
+    monkeypatch.chdir(_ROOT / "SDP_GATEWAY")
+    from controller.remote import RemoteController
+
+    remote = RemoteController("https://10.0.0.99:9500")
+
+    def refuse(*_a, **_k):
+        raise urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", refuse)
+
+    reply = remote.send(_knock(HEALTHY))
+    reason = reply["reason"]
+
+    assert reply["type"] == "DENIED", "a refused Controller must still deny"
+    assert "configuration fault" in reason, reason
+    assert "GATEWAY_CONTROLLER_URL" in reason, (
+        "the message must name the setting to fix")
+    assert "not this one" in reason, (
+        "the most common cause is pointing the Gateway at itself")
