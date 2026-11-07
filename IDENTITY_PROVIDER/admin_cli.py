@@ -21,11 +21,14 @@ never by switching enforcement off for the whole deployment:
     python admin_cli.py list-attestation-exceptions
     python admin_cli.py revoke-attestation-exception --username alice --device-id ...
 
-The IDP <-> Gateway link runs over mutual TLS with the project's own CA.
-Once per deployment, then once per Gateway:
+Every control link in the system runs over mutual TLS with the project's own
+CA: IDP <-> Gateway, and Gateway -> Controller. Once per deployment, then once
+per Gateway:
 
     python admin_cli.py init-ca
     python admin_cli.py issue-idp-cert --host localhost --host sdp-idp --host 192.168.1.10
+    python admin_cli.py issue-controller-cert
+        -> copy the printed folder to the Controller machine as SDP_CONTROLLER/certs/pki/
     python admin_cli.py issue-gateway-cert --id gw-1
     python admin_cli.py issue-proxy-cert --id gw-1
         -> copy the printed folder to the Gateway machine as SDP_GATEWAY/certs/pki/
@@ -36,6 +39,11 @@ issue-gateway-cert and issue-proxy-cert are not interchangeable. The first
 mints a CLIENT certificate: the Gateway's identity on the IDP link. The second
 mints a SERVER certificate: the one the Gateway presents to clients whose TLS
 it terminates. A client certificate cannot be served, so a Gateway needs both.
+
+issue-controller-cert is issued once for the whole deployment, not once per
+Gateway: a Gateway proves itself to the Controller with the very gateway.crt it
+already presents to the IDP, because it is the same Gateway identity. Adding a
+Gateway therefore needs no change on the Controller.
 """
 
 from __future__ import annotations
@@ -68,6 +76,19 @@ GATEWAY_BUNDLE_DIR = Path("./certs/pki/gateways")
 # dialled against this list and aborts the handshake before it ever presents a
 # token, so a missing name looks like an outage, not an authorisation failure.
 PROXY_SAN_HOSTS = ["sdp-gateway", "localhost", "127.0.0.1"]
+
+# Where issue-controller-cert writes the Controller's bundle, for the admin to
+# copy. One bundle for the deployment, not one per Gateway: the Controller
+# presents the same certificate to every Gateway that dials it.
+CONTROLLER_BUNDLE_DIR = Path("./certs/pki/controller")
+
+# Names a Gateway may dial the Controller by, and so the names its server
+# certificate must carry: the compose service name, plus the loopback forms
+# used when Gateway and Controller share a host — and used by the container's
+# own health probe, which verifies the host name like any other client.
+# GATEWAY_CONTROLLER_URL has to name one of these or the handshake fails
+# before a single decision is asked for.
+CONTROLLER_SAN_HOSTS = ["sdp-controller", "localhost", "127.0.0.1"]
 
 
 def _init_ca(_args: argparse.Namespace) -> int:
@@ -136,6 +157,46 @@ def _issue_proxy_cert(args: argparse.Namespace) -> int:
     print("It sits in the same bundle as gateway.crt: copy the folder to the Gateway "
           "machine as SDP_GATEWAY/certs/pki/ .")
     print("proxy.key lets its holder read every client's plaintext - treat it like gateway.key.")
+    return 0
+
+
+# The Controller decides and the Gateway only enforces, so the Controller's
+# port is the one place in the system where a wrong answer becomes an
+# admission. It therefore sits behind mutual TLS exactly like the IDP link, and
+# this mints the server half: the certificate the Controller presents to a
+# Gateway that dials in. The Gateway's half is issue-gateway-cert, unchanged -
+# it reuses the client certificate it already holds, so the Controller trusts
+# one identity per Gateway rather than two.
+def _issue_controller_cert(args: argparse.Namespace) -> int:
+    ca = _load_ca()
+    if ca is None:
+        return 1
+    bundle = CONTROLLER_BUNDLE_DIR
+    extra = [h for h in (args.host or []) if h not in CONTROLLER_SAN_HOSTS]
+    hosts = CONTROLLER_SAN_HOSTS + extra
+    cert_utils.issue(*ca, common_name="sdp-controller", kind="server", out_dir=bundle,
+                     hosts=hosts, file_stem="controller")
+    # /healthz is behind the same mutual TLS as the decision routes, so the
+    # Controller container's own health probe needs a client certificate too.
+    # It cannot reuse controller.crt: the extended-key-usage field says that is
+    # a server certificate, and a TLS server rejects one offered as a client
+    # certificate ("unsupported certificate"). Minting this small identity is
+    # what keeps a Gateway's private key off the Controller host, which would
+    # otherwise be the only other way to probe the port.
+    cert_utils.issue(*ca, common_name="sdp-controller-health", kind="client", out_dir=bundle,
+                     file_stem="health")
+    shutil.copyfile(Path(settings.idp_ca_dir) / root_ca.CA_CERT_NAME,
+                    bundle / root_ca.CA_CERT_NAME)
+    print(f"issued the Controller's certificate -> {bundle}/")
+    print(f"  controller.crt, controller.key  valid for {', '.join(hosts)}")
+    print("  health.crt, health.key          the container's own /healthz probe")
+    print("  ca.crt")
+    print("Copy that folder to the Controller machine as SDP_CONTROLLER/certs/pki/ .")
+    print("A Gateway must dial the Controller by one of those names "
+          "(GATEWAY_CONTROLLER_URL); it authenticates with its own gateway.crt, so no "
+          "further certificate is needed per Gateway.")
+    print("controller.key is the decision service's identity: a holder of it can answer "
+          "APPROVED to any Gateway that trusts this CA.")
     return 0
 
 
@@ -341,6 +402,15 @@ def main() -> int:
                    help="another name or IP clients reach this Gateway by; repeat for "
                         f"several ({', '.join(PROXY_SAN_HOSTS)} are always included)")
     p.set_defaults(func=_issue_proxy_cert)
+
+    p = sub.add_parser("issue-controller-cert",
+                       help="the Controller's server certificate for the Gateway -> "
+                            "Controller decision link - once per deployment, not per Gateway")
+    p.add_argument("--host", action="append",
+                   help="another name or IP a Gateway reaches this Controller by; repeat "
+                        f"for several ({', '.join(CONTROLLER_SAN_HOSTS)} are always "
+                        "included)")
+    p.set_defaults(func=_issue_controller_cert)
 
     p = sub.add_parser("list-gateways")
     p.set_defaults(func=_list_gateways)

@@ -126,6 +126,69 @@ class Settings:
     # on this host.
     gateway_proxy_cert_path: str = os.environ.get("GATEWAY_PROXY_CERT_PATH", "./certs/pki/proxy.crt")
     gateway_proxy_key_path: str = os.environ.get("GATEWAY_PROXY_KEY_PATH", "./certs/pki/proxy.key")
+    # The Controller's mTLS decision service. The Gateway asks it about every
+    # knock and does what the answer says; it no longer decides anything
+    # itself. The host must be one the Controller certificate was issued for
+    # (admin_cli.py issue-controller-cert). On the Gateway side this link
+    # reuses gateway_tls_cert_path above — the same client certificate, because
+    # it is the same Gateway identity the IDP already knows.
+    #
+    # A Controller that cannot be reached means DENIED. There is deliberately
+    # no local fallback engine any more: a fallback is an admission granted
+    # without a decision, which is the exact failure this split removes.
+    gateway_controller_url: str = os.environ.get(
+        "GATEWAY_CONTROLLER_URL", "https://localhost:9500")
+    # How many consecutive /session_review failures the Gateway tolerates
+    # before it revokes every live session. Not zero: one transient blip would
+    # cut every session at once, so a restart of the Controller would look like
+    # an outage of the whole system. Not unbounded either — a Controller that
+    # stays down must not silently leave the Gateway running on decisions
+    # nobody is re-affirming, which would degrade it to authorise-once. Three
+    # strikes is a few review intervals' grace, then everything goes.
+    gateway_review_failures_before_revoke: int = int(
+        os.environ.get("GATEWAY_REVIEW_FAILURES_BEFORE_REVOKE", "3"))
+
+    # --- SDP Controller (SDP_CONTROLLER/) — the Policy Decision Point ---
+    # A process of its own, not a library inside the Gateway. It holds the
+    # policy file, the telemetry snapshot and the trust scorer, and answers
+    # SPA_VERIFY and SESSION_REVIEW over mutual TLS. Like the IDP it never
+    # dials out: it only ever answers a Gateway that connected to it, which
+    # keeps every inbound control connection in the system on one side.
+    controller_host: str = os.environ.get("CONTROLLER_HOST", "0.0.0.0")
+    controller_port: int = int(os.environ.get("CONTROLLER_PORT", "9500"))
+    # The Controller's bundle from `admin_cli.py issue-controller-cert`,
+    # relative to SDP_CONTROLLER/. controller.crt is the server certificate it
+    # presents; ca.crt is what it verifies every Gateway against and is the
+    # only thing that tells a Gateway apart from anything else on the network.
+    controller_tls_cert_path: str = os.environ.get(
+        "CONTROLLER_TLS_CERT_PATH", "./certs/pki/controller.crt")
+    controller_tls_key_path: str = os.environ.get(
+        "CONTROLLER_TLS_KEY_PATH", "./certs/pki/controller.key")
+    controller_ca_cert_path: str = os.environ.get(
+        "CONTROLLER_CA_CERT_PATH", "./certs/pki/ca.crt")
+    # /healthz is behind the same mutual TLS as the decision routes, so even a
+    # liveness probe has to present a client certificate. controller.crt cannot
+    # stand in — a TLS server refuses a server certificate offered as a client
+    # certificate — and borrowing a Gateway's would put a Gateway key on this
+    # host. issue-controller-cert mints this pair for the probe alone.
+    controller_health_cert_path: str = os.environ.get(
+        "CONTROLLER_HEALTH_CERT_PATH", "./certs/pki/health.crt")
+    controller_health_key_path: str = os.environ.get(
+        "CONTROLLER_HEALTH_KEY_PATH", "./certs/pki/health.key")
+    # What the decision is actually made from: the live-editable policy file
+    # and the snapshot the detection pipeline writes (run_pipeline.py). Both
+    # are mounted into the container rather than baked into the image, so
+    # policy changes do not need a rebuild.
+    controller_policies_path: str = os.environ.get(
+        "CONTROLLER_POLICIES_PATH", "./policies.yaml")
+    controller_telemetry_path: str = os.environ.get(
+        "CONTROLLER_TELEMETRY_PATH", "./telemetry_snapshot.json")
+    # How long an APPROVED session lives before the Gateway has to have it
+    # re-affirmed. Short on purpose: it bounds how long a device whose posture
+    # has since collapsed keeps its hole in the firewall. 30s is what the
+    # in-process engine used (GATEWAY_POLICY_TTL_SECONDS), kept so moving the
+    # decision out of the Gateway does not quietly change how long access lasts.
+    controller_ttl_seconds: int = int(os.environ.get("CONTROLLER_TTL_SECONDS", "30"))
 
     # --- Resource node ---
     # Where the Gateway re-forwards a request after inspecting it, and where

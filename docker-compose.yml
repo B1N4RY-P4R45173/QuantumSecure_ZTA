@@ -44,6 +44,55 @@ services:
       - idp-net
     restart: unless-stopped
 
+  # The Policy Decision Point, split out of the Gateway process. It holds the
+  # policy file, the telemetry snapshot and the trust scorer, and answers
+  # SPA_VERIFY and SESSION_REVIEW over mutual TLS.
+  #
+  # On controller-net ALONE, and that is the whole point of the service:
+  #   * not data-plane-net — it rules on access to the resources and has no
+  #     route to them, so owning the decision does not hand you the data;
+  #   * not client-net — nothing a client can reach decides whether that
+  #     client gets in;
+  #   * no published port — the only way in is from the Gateway, holding a
+  #     certificate this project's CA signed. Reaching the port buys nothing
+  #     without one.
+  #
+  # Needs no capability and no host uid pin: it binds a high port, writes
+  # nothing, and every mount below is read-only, so the image's own non-root
+  # `controller` user is enough.
+  sdp-controller:
+    build:
+      context: .
+      dockerfile: ./docker/controller/Dockerfile
+    image: sdp-controller:latest
+    container_name: sdp-controller
+    env_file: .env
+    environment:
+      - CONTROLLER_HOST=0.0.0.0
+      - CONTROLLER_PORT=9500
+    # Run as the host user that owns the mounted key bundle. controller.key
+    # is 0600 by design — a private key readable by anyone on the host would
+    # be the worse bug — so the image's own unprivileged user cannot read it
+    # through a bind mount and the service aborts with PermissionError. Same
+    # reasoning, and the same override, as the IDP above.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    volumes:
+      # The bundle from `admin_cli.py issue-controller-cert`: ca.crt,
+      # controller.crt/.key (what it presents to a Gateway) and health.crt/.key
+      # (the container's own /healthz probe, which is behind the same mTLS).
+      # Read-only, and absent until the admin copies it in — in which case the
+      # Controller fails to start rather than serving decisions unauthenticated.
+      - ./SDP_CONTROLLER/certs/pki:/app/SDP_CONTROLLER/certs/pki:ro
+      # The decision inputs, mounted rather than baked into the image so an
+      # operator can edit policy or refresh telemetry without a rebuild.
+      # Read-only: the Controller reads both and writes neither — the
+      # snapshot's writer is the detection pipeline, elsewhere.
+      - ./SDP_CONTROLLER/policies.yaml:/app/SDP_CONTROLLER/policies.yaml:ro
+      - ./SDP_CONTROLLER/telemetry_snapshot.json:/app/SDP_CONTROLLER/telemetry_snapshot.json:ro
+    networks:
+      - controller-net
+    restart: unless-stopped
+
   sdp-gateway:
     build:
       context: .
@@ -53,6 +102,11 @@ services:
     env_file: .env
     environment:
       - GATEWAY_IDP_LINK_URL=https://sdp-idp:9443
+      # The decision now runs in its own process. The host must be a name the
+      # Controller's certificate carries — issue-controller-cert always covers
+      # sdp-controller. Unreachable means every knock is DENIED: the Gateway
+      # has no local policy engine left to fall back to.
+      - GATEWAY_CONTROLLER_URL=https://sdp-controller:9500
       - RESOURCE_HOST=resource-node
       - RESOURCE_PORT=7443
     # NET_ADMIN to insert nftables rules; NET_BIND_SERVICE to bind the
@@ -75,8 +129,17 @@ services:
       # the mTLS link, so it needs a route to the IDP. The IDP never calls
       # back.
       - idp-net
+      # And a route to the Controller, for the same reason and in the same
+      # direction: the Gateway asks, the Controller answers, the Controller
+      # never dials the Gateway. This is the only service on controller-net
+      # besides the Controller itself.
+      - controller-net
     depends_on:
       - sdp-idp
+      # Not a readiness guarantee — compose only waits for the container to
+      # start. It does not need to be: a knock that arrives before the
+      # Controller answers is denied, which is the correct answer, not a race.
+      - sdp-controller
     restart: unless-stopped
 
   sdp-client:
@@ -142,4 +205,15 @@ networks:
   idp-net:
     driver: bridge
     name: idp-net
+
+  # Gateway -> Controller, and nothing else is on it. Internal, so it has no
+  # outbound route and publishes no port: the decision service is reachable
+  # only from the one component that is allowed to ask it anything. Traffic
+  # only ever runs toward the Controller, exactly as on idp-net — the
+  # Controller never dials the Gateway back, which is why the Gateway needs no
+  # inbound control port at all.
+  controller-net:
+    driver: bridge
+    internal: true
+    name: controller-net
 

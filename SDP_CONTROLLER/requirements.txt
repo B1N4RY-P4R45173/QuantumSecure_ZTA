@@ -1,5 +1,18 @@
+# The Controller is now a service, not just a library the Gateway imported.
+# The HTTP server itself is Python's standard library (http.server + ssl) on
+# purpose - no FastAPI, no uvicorn: uvicorn does not hand the peer certificate
+# to the application, and the peer certificate IS this service's
+# authorisation model. See service/app.py.
 PyYAML>=6.0
 rich>=13.7
 scikit-learn>=1.4
 joblib>=1.3
 numpy>=1.26
+# The mutual-TLS listener: shared/ca/cert_utils.py builds the SSLContext and
+# reads the Gateway id out of the verified peer certificate, both on
+# cryptography's x509.
+cryptography>=43
+# shared/config/settings.py loads .env at import. The Controller is configured
+# from the environment like every other component, so whatever here imports
+# settings needs it present.
+python-dotenv>=1.0,<2.0

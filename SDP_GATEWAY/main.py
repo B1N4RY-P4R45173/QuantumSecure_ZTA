@@ -1,10 +1,10 @@
 """SDP Gateway entrypoint.
 
-The Gateway consults the standalone IDP, never a Controller. Two things
-have to line up before the SPA listener can do its job, and both go over
-the one IDP <-> Gateway link, which is mutual TLS with the project CA
-(mtls/idp_link.py). The Gateway opens that connection; the IDP never calls
-the Gateway.
+Identity comes from the standalone IDP and never from a Controller, which is
+where this differs from classic SDP. Two things have to line up before the
+SPA listener can do its job, and both go over the one IDP <-> Gateway link,
+which is mutual TLS with the project CA (mtls/idp_link.py). The Gateway opens
+that connection; the IDP never calls the Gateway.
 
   1. The client needs this Gateway's ML-KEM public key in order to
      encapsulate a knock against it. The client only ever talks to the IDP
@@ -17,8 +17,22 @@ the Gateway.
      the same link, so a forged JWKS cannot be slipped in on the way.
 
 A knock that passes every Gateway check is forwarded to a Controller for the
-access decision (controller/). For now that is an in-process allow-all
-stand-in; the real SDP Controller will replace it.
+access decision (controller/). Which Controller is a startup choice, and the
+only one that matters for where policy lives:
+
+  * GATEWAY_CONTROLLER_URL set - a separate Controller service, reached over
+    mutual TLS (controller/remote.py). The Gateway enforces and nothing more.
+    Startup aborts if that Controller is not answering, for the same reason
+    the JWKS check aborts: a Gateway that cannot obtain a decision can admit
+    nobody, so an open SPA port would only produce silent denials.
+  * otherwise - the in-process policy engine (controller/policy_controller.py),
+    which decides on this box.
+  * GATEWAY_ALLOW_ALL=1 - the allow-all stand-in, for separating a data-path
+    problem from a policy one during a demo. Never a default.
+
+The startup log says which one plainly. "Decisions are made here" and
+"decisions are made elsewhere" are different systems to operate, and that
+difference must not be something an operator has to infer from a config file.
 """
 
 import os
@@ -32,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from controller.allow_all import AllowAllController
 from controller.policy_controller import PolicyController
+from controller.remote import RemoteController
 from firewall import rules as firewall_rules
 from firewall.sessions import TABLE as sessions
 from mtls import idp_link
@@ -54,6 +69,12 @@ PROTECTED_PORTS = [int(p) for p in
 # so it is a security parameter, not a tuning knob: shorter means a tighter
 # window and more policy evaluations per second.
 REEVALUATE_EVERY_SECONDS = float(os.environ.get("GATEWAY_REEVALUATE_SECONDS", "10"))
+
+# Where the separate Controller service listens, e.g.
+# https://sdp-controller:9500. Unset means the decision is made in process.
+# Read here rather than inside the controller so the choice is visible at the
+# top of the entrypoint that makes it.
+CONTROLLER_URL = os.environ.get("GATEWAY_CONTROLLER_URL", "").strip()
 
 
 def _reevaluation_loop(controller, stop: threading.Event) -> None:
@@ -81,6 +102,17 @@ def _check_idp_jwks(ctx) -> None:
         raise RuntimeError("IDP JWKS has no ES256 knock-ticket key - aborting startup")
     status(log, "IDP JWKS fetched over mTLS", keys=len(keys),
            kids=[k.get("kid") for k in keys])
+
+
+def _check_controller(controller: RemoteController) -> None:
+    """Startup fails closed, exactly as _check_idp_jwks does: a Gateway that
+    cannot reach its Controller can approve no knock, so opening the SPA port
+    would advertise a service that denies everything while looking healthy.
+    Checked once here so the failure arrives at startup with a reason, rather
+    than later as an unexplained refusal per knock."""
+    reply = controller.check_healthz()
+    status(log, "Controller reachable over mTLS", url=controller.url,
+           health=reply.get("status"))
 
 
 if __name__ == "__main__":
@@ -112,17 +144,26 @@ if __name__ == "__main__":
     # One reaper for every lease, instead of a timer per grant.
     sessions.start_reaper()
 
-    # The real decision maker: scores device trust and evaluates policies.yaml.
-    # GATEWAY_ALLOW_ALL=1 falls back to the stand-in, for isolating a data-path
-    # problem from a policy one during a demo. It is never the default, because
-    # a Gateway that silently approves everything looks identical to one that
-    # is working.
+    # Who decides. GATEWAY_ALLOW_ALL=1 is checked first and on purpose: it is
+    # the escape hatch for isolating a data-path problem from a policy one
+    # during a demo, so it has to win over whatever else is configured, and it
+    # is never the default, because a Gateway that silently approves everything
+    # looks identical to one that is working. Otherwise a Controller URL means
+    # the decision is made off-box and this process only enforces; with no URL
+    # the in-process engine decides here.
     if os.environ.get("GATEWAY_ALLOW_ALL") == "1":
         controller = AllowAllController()
         status(log, "Controller: allow-all stand-in (GATEWAY_ALLOW_ALL=1, NO POLICY ENGINE)")
+    elif CONTROLLER_URL:
+        controller = RemoteController(CONTROLLER_URL)
+        # Before the SPA port opens, not after: see _check_controller.
+        _check_controller(controller)
+        status(log, "Controller: REMOTE - decisions are made by the Controller service, "
+                    "this Gateway only enforces", url=CONTROLLER_URL)
     else:
         controller = PolicyController()
-        status(log, "Controller: policy engine + trust scorer")
+        status(log, "Controller: IN-PROCESS policy engine + trust scorer - "
+                    "decisions are made by this Gateway")
 
     # The data path. Terminates the client's TLS, inspects the decrypted
     # request, and re-forwards it to the resource over the cleartext inner
