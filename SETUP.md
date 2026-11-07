@@ -271,6 +271,26 @@ py -m venv .venv-win
 .\.venv-win\Scripts\pip install -r requirements.txt
 ```
 
+**Give the client the project CA.** It verifies the Gateway's proxy
+certificate against this one file and nothing else — not the system store —
+so without it the client refuses to connect, by design. The containerised
+client receives it through a volume mount; a native one has no mount, and
+`**/certs/pki/` is gitignored so it never arrives with a clone either:
+
+```powershell
+mkdir certs\pki -Force
+copy ..\SDP_GATEWAY\certs\pki\ca.crt certs\pki\ca.crt
+```
+
+The failure if you skip it is explicit rather than silent, and `knock` still
+succeeds first, which makes it look like a data-path problem:
+
+```
+no project CA to verify the Gateway with: Project CA not found at
+...\SDP_CLIENT\certs\pki\ca.crt. Refusing to connect: an unverified data
+path is worse than none.
+```
+
 Create `.env` in the repo root on the Windows side with:
 
 ```ini
@@ -421,6 +441,7 @@ the real LightGBM and real PyTorch models produced for those same rows.
 | Windows: `No Windows Hello platform authenticator` | no Hello PIN, or no usable TPM |
 | Windows: `Hello returned NO attestation` | no TPM, so Hello used software. The IDP refuses it, correctly |
 | Windows: cannot reach the IDP | check `docker port sdp-idp` in WSL; WSL2 localhost forwarding may be off |
+| Windows: `no project CA to verify the Gateway with` | the native client has no `SDP_CLIENT/certs/pki/ca.crt`. Copy it from `SDP_GATEWAY/certs/pki/` (section 7). `knock` succeeds first, so it looks like a data-path fault |
 | Knock accepted, `connect` times out | lease expired (`CONTROLLER_TTL_SECONDS`) or revoked. Read Ajay's Controller log |
 | `ztna knock` silent, nothing obviously wrong | that IS the design. The reason is on the Controller, never on the wire |
 
