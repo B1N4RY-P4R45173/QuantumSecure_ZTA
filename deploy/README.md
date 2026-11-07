@@ -104,6 +104,22 @@ mkdir -p ../SDP_GATEWAY/certs/pki
 cp certs/pki/gateways/gw-1/* ../SDP_GATEWAY/certs/pki/
 ```
 
+### First, start the IDP once
+
+`admin_cli.py` does not create `idp_jwt_public.pem`. That key is minted by
+the IDP process on its first start, so it does not exist yet and there is
+nothing to copy:
+
+```bash
+cd ..
+docker compose -f deploy/abhinav/docker-compose.yml --env-file .env up -d --build sdp-idp
+ls -l IDENTITY_PROVIDER/certs/idp_jwt_public.pem
+cd IDENTITY_PROVIDER
+```
+
+Without Docker: `./.venv/bin/python -c "import sys; sys.path[:0]=['.','..'];
+from tokens import jwt_service; jwt_service.init()"`
+
 ### Copy to Ajay
 
 Four things travel, and only one is sensitive in the usual sense:

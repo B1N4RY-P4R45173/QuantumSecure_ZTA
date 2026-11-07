@@ -147,6 +147,42 @@ python admin_cli.py create-user --username abhinav --roles employee
 
 ---
 
+## 3a. Abhinav's laptop — start the IDP, so it mints its signing key
+
+`admin_cli.py` does NOT create `idp_jwt_public.pem`. That is the RS256 key
+the IDP signs access tokens with, and it is generated the first time the IDP
+process itself starts — so it does not exist until the IDP has run once, and
+there is nothing to copy to Ajay before then.
+
+```bash
+cd ~/ztna
+docker compose -f deploy/abhinav/docker-compose.yml --env-file .env up -d --build sdp-idp
+```
+
+The container writes it through the bind mount, so it lands on the host:
+
+```bash
+ls -l IDENTITY_PROVIDER/certs/idp_jwt_public.pem      # must exist before section 4
+```
+
+No Docker, or you want it without starting anything:
+
+```bash
+cd ~/ztna/IDENTITY_PROVIDER
+./.venv/bin/python -c "import sys; sys.path[:0]=['.','..']; \
+from tokens import jwt_service; jwt_service.init()"
+```
+
+Either way you end up with two files in `IDENTITY_PROVIDER/certs/`:
+`idp_jwt_private.pem`, which never leaves this machine, and
+`idp_jwt_public.pem`, which Ajay needs.
+
+There is a second pair, `idp_ticket_*`, for the ES256 knock tickets. Nobody
+copies that one: the Gateway fetches the public half from the IDP's JWKS
+over the mTLS link, so it is never pinned to a file.
+
+---
+
 ## 4. Abhinav → Ajay: copy three bundles
 
 ```bash
@@ -199,7 +235,9 @@ Transport: HTTPS, and a Gateway certificate is REQUIRED (mutual TLS, project CA)
 
 ---
 
-## 6. Abhinav's laptop — start the IDP and the Gateway
+## 6. Abhinav's laptop — start the Gateway
+
+The IDP is already up from section 3a; this brings up the rest.
 
 ```bash
 cd ~/ztna
