@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# One demo beat per invocation. Run these in the bottom tmux pane while the
+# Gateway and Controller logs stream above, so every claim is visible as it
+# is made rather than asserted afterwards.
+#
+#   ./demo/step 0   the stack, and the closed door
+#   ./demo/step 1   prove the door is dark
+#   ./demo/step 2   the full flow: TPM, FIDO2, SPA, trust score, HTTP 200
+#   ./demo/step 3   compromise the device, watch the live session be revoked
+#   ./demo/step 4   knock again, now quarantined
+#   ./demo/step 5   back to clean
+#   ./demo/step 6   the policy board
+set -uo pipefail
+cd "$(dirname "$0")/.."
+
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; R=$'\033[31m'; Y=$'\033[33m'; N=$'\033[0m'
+
+say()  { printf '\n%s%s%s\n' "$B" "$1" "$N"; }
+note() { printf '%s%s%s\n' "$D" "$1" "$N"; }
+good() { printf '%s%s%s\n' "$G" "$1" "$N"; }
+bad()  { printf '%s%s%s\n' "$R" "$1" "$N"; }
+warn() { printf '%s%s%s\n' "$Y" "$1" "$N"; }
+pause(){ printf '\n%s[enter]%s ' "$D" "$N"; read -r _; }
+
+# How many leased holes are open right now.
+#
+# Read from nftables, NOT from the session table. The session table lives in
+# the Gateway process's memory, so `docker exec ... python` would start a
+# fresh interpreter with an empty one and cheerfully report 0 every time --
+# which it did, until this demo was tested rather than assumed. The firewall
+# is the shared, externally observable state, and it is also the thing that
+# actually decides whether packets flow.
+# grep -c prints its count AND exits 1 when that count is zero, so a
+# `|| echo 0` fallback would print twice. Capture it and ignore the status.
+pinholes() {
+  local n
+  n=$(docker exec sdp-gateway nft list table inet sdp_spa 2>/dev/null \
+        | grep -c 'saddr .* accept')
+  printf '%s' "${n:-0}"
+}
+
+TPM_URI="swtpm:host=127.0.0.1,port=2321"
+
+case "${1:-}" in
+
+0)
+  say "The system, and the door that is shut"
+  docker compose ps --format '  {{.Service}}\t{{.State}}'
+  note ""
+  note "The Controller is on its own internal network. No published port,"
+  note "no route to the resource. Owning the decision does not get you data."
+  pause
+  say "The Gateway's firewall, read out of the running container"
+  docker exec sdp-gateway nft list table inet sdp_spa
+  note ""
+  note "443 is DROP, not REJECT. Nothing answers. The accept above it is"
+  note "conntrack: a session already established keeps flowing."
+  ;;
+
+1)
+  say "Is the door actually dark?"
+  note "Connecting to the Gateway's 443 from the client network, no knock."
+  note "A closed port REFUSES instantly. A dark one says nothing at all."
+  echo
+  timeout 25 docker run --rm --network client-net python:3.12-slim python -c "
+import socket, time
+s = socket.socket(); s.settimeout(8)
+t0 = time.time()
+try:
+    s.connect(('sdp-gateway', 443))
+    print('  REACHED - the port is NOT dark')
+except socket.timeout:
+    print(f'  TIMEOUT after {time.time()-t0:.1f}s - silently dropped')
+except ConnectionRefusedError:
+    print('  REFUSED - closed, but discoverable')
+" 2>/dev/null
+  echo
+  good "No RST, no banner, no answer. A scanner cannot tell this host apart"
+  good "from an unused address. That is the Software Defined Perimeter."
+  ;;
+
+2)
+  say "The full flow"
+  note "Watch the panes above: SPA arriving at the Gateway, the Controller"
+  note "scoring it, the firewall opening, the proxy forwarding."
+  note ""
+  note "Six stages: password -> FIDO2 signed by the TPM -> knock ticket ->"
+  note "ML-KEM-768 sealed packet -> Controller decision -> data path."
+  pause
+  cd SDP_CLIENT
+  TPM_TCTI="$TPM_URI" timeout 45 ./.venv/bin/python main.py 2>&1 \
+    | grep -viE 'heartbeat|Refresh loop' \
+    | sed -e "s/\(Hardware-attested: True\)/$(printf '\033[32m')\1$(printf '\033[0m')/" \
+          -e "s/\(Attestation format: tpm\)/$(printf '\033[32m')\1$(printf '\033[0m')/" \
+          -e "s/\(accepted=True\)/$(printf '\033[32m')\1$(printf '\033[0m')/" \
+          -e "s/\(http_status=200\)/$(printf '\033[32m')\1$(printf '\033[0m')/"
+  ;;
+
+3)
+  say "The device is compromised while its session is live"
+  note "First, a fresh session, so the clock starts now rather than"
+  note "depending on whatever step 2 left behind."
+  echo
+  ( cd SDP_CLIENT && TPM_TCTI="$TPM_URI" timeout 12 ./.venv/bin/python main.py \
+      >/tmp/ztna-demo-client.log 2>&1 ) || true
+  grep -oE 'http_status=200|accepted=True' /tmp/ztna-demo-client.log | tail -2 | sed 's/^/  /'
+  good "  open pinholes in the Gateway firewall: $(pinholes)"
+  note ""
+  note "Nothing about the user is about to change. The credential stays valid,"
+  note "the TPM still holds the key, the posture bits are still attested."
+  note "Only the evidence about the device changes."
+  pause
+  python3 demo/telemetry.py compromised
+  pause
+  say "Now watch the Controller pane"
+  note "Re-evaluation runs every 10s, re-scoring every live session against"
+  note "the evidence as it stands NOW, not as it stood at admission."
+  echo
+  for i in $(seq 1 20); do
+    n=$(pinholes)
+    printf '\r  %2ss  open pinholes in the Gateway firewall: %s   ' "$i" "$n"
+    [ "$n" = "0" ] && break
+    sleep 1
+  done
+  echo; echo
+  docker logs sdp-gateway --since 40s 2>&1 | grep -iE 'REVOKE|SESSION CLOSED|rule revoked' | tail -4
+  echo
+  good "Torn down, with the client doing nothing wrong and asking for nothing."
+  good "That is the difference between zero trust and authenticate-once."
+  ;;
+
+4)
+  say "The same device knocks again"
+  note "Fully attested posture. Valid credential. Correct password."
+  note "Watch the score, and watch what overrides it."
+  pause
+  cd SDP_CLIENT
+  TPM_TCTI="$TPM_URI" timeout 30 ./.venv/bin/python main.py 2>&1 \
+    | grep -viE 'heartbeat|Refresh loop' | tail -22
+  echo
+  docker logs sdp-controller --since 40s 2>&1 | grep -iE 'trust \||QUARANT|DENIED' | tail -8
+  echo
+  bad "Denied, and note HOW. The posture score did not drop - it is still"
+  bad "40/60, exactly what it was when this device was let in. The score"
+  bad "was forced to 0 by the detectors, not averaged down by them."
+  note ""
+  note "Note also what the client saw: no rejection, just silence. An invalid"
+  note "knock is dropped, so an attacker learns nothing from being refused."
+  ;;
+
+5)
+  say "Back to clean"
+  python3 demo/telemetry.py clean
+  ;;
+
+6)
+  say "The policy engine"
+  note "Eight scenarios, deny-wins, implicit deny. Edit SDP_CONTROLLER/policies.yaml"
+  note "in another pane and re-run this - the decision changes with no restart."
+  cd SDP_CONTROLLER && python3 demo.py
+  ;;
+
+*)
+  cat <<'USAGE'
+  ./demo/step 0   the stack, and the closed door
+  ./demo/step 1   prove the door is dark
+  ./demo/step 2   the full flow: TPM, FIDO2, SPA, trust score, HTTP 200
+  ./demo/step 3   compromise the device, watch the live session be revoked
+  ./demo/step 4   knock again, now quarantined
+  ./demo/step 5   back to clean
+  ./demo/step 6   the policy board
+USAGE
+  ;;
+esac

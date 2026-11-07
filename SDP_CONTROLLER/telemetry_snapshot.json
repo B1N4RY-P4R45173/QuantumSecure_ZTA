@@ -118,5 +118,23 @@
       "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
       "traffic": "Normal"
     }
+  },
+  "172.18.0.1": {
+    "suricata": null,
+    "ml": {
+      "flow_count": 40,
+      "malicious_flows": 0,
+      "anomaly_rate": 0.0,
+      "top_class": "benign",
+      "class_counts": {
+        "Normal": 40
+      },
+      "ae_flagged": 0,
+      "ae_rate": 0.0,
+      "quarantine_hits": 0,
+      "max_attack_probability": 0.000921,
+      "source": "FLAT_cal + autoencoder, edge_inline_eval_20261104_164043",
+      "traffic": "Normal"
+    }
   }
 }
